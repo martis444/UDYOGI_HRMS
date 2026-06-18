@@ -62,7 +62,6 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Employees",    href: "/dashboard/employees",     icon: Users,         adminOnly: true },
       { label: "Payroll",      href: "/dashboard/payroll",       icon: BarChart3,     adminOnly: true },
-      { label: "Master data",  href: "/dashboard/master-data",   icon: BookOpen,      adminOnly: true },
       { label: "Locations (GSTN)", href: "/dashboard/locations",            icon: MapPin,      adminOnly: true },
       { label: "Loans",          href: "/dashboard/loans",                    icon: HandCoins,   adminOnly: true },
       { label: "Biometric",      href: "/dashboard/biometric",                icon: Fingerprint, adminOnly: true },

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Clock, BookOpen, CheckSquare, MoreHorizontal, FileText, CalendarPlus } from "lucide-react";
+import { LayoutDashboard, Clock, BookOpen, CheckSquare, FileText, CalendarPlus } from "lucide-react";
 import { useAuth, isAdminRole, isEmployee } from "@/lib/auth";
 
 export default function BottomNav() {
@@ -22,7 +22,6 @@ export default function BottomNav() {
         { label: "Attendance", href: "/dashboard/attendance",                             icon: Clock },
         { label: "Leave",      href: isAdmin ? "/dashboard/leave" : "/dashboard/leave/apply", icon: BookOpen },
         { label: "Approve",    href: "/dashboard/approvals",                              icon: CheckSquare },
-        { label: "More",       href: "/dashboard/more",                                   icon: MoreHorizontal },
       ];
 
   function isActive(href: string) {

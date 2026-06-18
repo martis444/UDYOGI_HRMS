@@ -54,7 +54,6 @@ const QUICK_ACTIONS = [
 const ADMIN_ACTIONS = [
   { label: "Employees",   href: "/dashboard/employees",   icon: Users,       color: "#E5202E" },
   { label: "Payroll",     href: "/dashboard/payroll",     icon: TrendingUp,  color: "#16A34A" },
-  { label: "Master data", href: "/dashboard/master-data", icon: FileText,    color: "#2563EB" },
   { label: "Audit log",   href: "/dashboard/audit",       icon: AlertCircle, color: "#6B7280" },
 ];
 
