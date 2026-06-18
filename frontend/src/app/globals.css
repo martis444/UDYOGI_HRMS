@@ -1,0 +1,189 @@
+@import "tailwindcss";
+
+@theme {
+  --color-udyogi-red: #E5202E;
+  --color-udyogi-red-hover: #C81824;
+  --color-udyogi-maroon: #9A1118;
+  --color-ink: #1A1A1A;
+  --color-ink-soft: #242424;
+  --color-bone: #F4F4F2;
+  --color-surface: #FFFFFF;
+  --color-text-dark: #1A1A1A;
+  --color-text-muted: #5A5A5A;
+  --color-border-light: #E2E2DF;
+  --color-success: #16A34A;
+  --color-warning: #D97706;
+  --color-danger: #DC2626;
+
+  /* entity colors */
+  --color-entity-uppl: #E5202E;
+  --color-entity-usapl: #1A1A1A;
+  --color-entity-uapl: #16A34A;
+  --color-entity-umpl: #2563EB;
+
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+}
+
+:root {
+  --udyogi-red: #E5202E;
+  --udyogi-red-hover: #C81824;
+  --udyogi-maroon: #9A1118;
+  --ink: #1A1A1A;
+  --ink-soft: #242424;
+  --bone: #F4F4F2;
+  --surface: #FFFFFF;
+  --text-dark: #1A1A1A;
+  --text-muted: #5A5A5A;
+  --border-light: #E2E2DF;
+  --success: #16A34A;
+  --warning: #D97706;
+  --danger: #DC2626;
+
+  /* Shared motion easing (matches the login design language) */
+  --ease-expressive: cubic-bezier(.16, 1, .3, 1);
+  --ease-smooth: cubic-bezier(.2, .8, .2, 1);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #6B6B6B; /* WCAG >=4.5:1 on white/glass surfaces */
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: var(--bone);
+  color: var(--text-dark);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ─── Animation keyframes ─────────────────────────────────────────────────── */
+
+@keyframes blob-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+
+@keyframes slide-up-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@layer utilities {
+  .animate-blob {
+    animation: blob-pulse 8s ease-in-out infinite;
+  }
+
+  .animate-blob-delay {
+    animation: blob-pulse 8s ease-in-out infinite;
+    animation-delay: 4s;
+  }
+
+  .animate-slide-up {
+    animation: slide-up-in 0.25s ease-out forwards;
+  }
+
+  /* Hide scrollbars while keeping scroll */
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+}
+
+/* ─── Login "liquid glass" keyframes (the approved design) ────────────────── */
+
+@keyframes lgDrift1 { 0%{transform:translate(0,0) scale(1)} 50%{transform:translate(60px,-44px) scale(1.14)} 100%{transform:translate(0,0) scale(1)} }
+@keyframes lgDrift2 { 0%{transform:translate(0,0) scale(1)} 50%{transform:translate(-64px,52px) scale(1.1)} 100%{transform:translate(0,0) scale(1)} }
+@keyframes lgDrift3 { 0%{transform:translate(0,0) scale(1)} 50%{transform:translate(44px,64px) scale(0.9)} 100%{transform:translate(0,0) scale(1)} }
+@keyframes lgChev  { 0%{transform:translate(0,0) rotate(-8deg)} 50%{transform:translate(34px,-26px) rotate(-4deg)} 100%{transform:translate(0,0) rotate(-8deg)} }
+@keyframes lgEnter { from{opacity:0; transform:translateY(48px) scale(0.93); filter:blur(18px)} to{opacity:1; transform:translateY(0) scale(1); filter:blur(0)} }
+@keyframes lgReveal { from{opacity:0; transform:translateY(18px)} to{opacity:1; transform:translateY(0)} }
+@keyframes lgSweep { 0%{transform:translateX(-180%) skewX(-12deg)} 100%{transform:translateX(320%) skewX(-12deg)} }
+@keyframes lgHue { 0%{filter:saturate(1) brightness(1)} 50%{filter:saturate(1.15) brightness(1.08)} 100%{filter:saturate(1) brightness(1)} }
+@keyframes lgSpin { to { transform:rotate(360deg) } }
+@keyframes lgRipple { to { transform:scale(2.6); opacity:0 } }
+@keyframes lgSpark { 0%{transform:translateY(0) scale(1); opacity:0} 10%{opacity:0.85} 88%{opacity:0.6} 100%{transform:translateY(-104vh) scale(0.35); opacity:0} }
+@keyframes lgCaps { from{opacity:0; transform:translateY(-4px)} to{opacity:1; transform:translateY(0)} }
+
+/* ─── Shared "alive" motion layer (dashboard + chrome) ────────────────────── */
+
+@layer utilities {
+  .rise-in { animation: lgReveal .6s var(--ease-expressive) both; }
+
+  .delay-1 { animation-delay: .06s; }
+  .delay-2 { animation-delay: .12s; }
+  .delay-3 { animation-delay: .18s; }
+  .delay-4 { animation-delay: .24s; }
+  .delay-5 { animation-delay: .30s; }
+
+  .card-hover {
+    transition: transform 0.22s var(--ease-smooth), box-shadow 0.22s var(--ease-smooth);
+  }
+  .card-hover:hover {
+    transform: translateY(-3px) scale(1.008);
+    box-shadow: 0 22px 60px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.95);
+  }
+  .card-hover:active { transform: translateY(-1px) scale(1.003); }
+
+  .press { transition: transform .15s var(--ease-smooth); }
+  .press:active { transform: scale(0.96); }
+}
+
+/* ─── Glass card ──────────────────────────────────────────────────────────── */
+.glass-card {
+  border-radius: 1rem;
+  border: 1px solid rgba(255,255,255,0.55);
+  /* Near-opaque so dense data/tables stay legible; blur keeps the frosted brand edge */
+  background: rgba(255,255,255,0.96);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.95);
+}
+
+.glass-card-hover {
+  cursor: pointer;
+  transition: transform 0.22s var(--ease-smooth), box-shadow 0.22s var(--ease-smooth);
+}
+.glass-card-hover:hover {
+  transform: translateY(-3px) scale(1.008);
+  box-shadow: 0 22px 60px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.95);
+}
+.glass-card-hover:active {
+  transform: translateY(-1px) scale(1.003);
+}
+
+/* ─── Page section title (white, for dark bg) ─────────────────────────────── */
+.section-title {
+  color: rgba(255,255,255,0.90);
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+/* Respect users who ask for reduced motion: collapse non-essential motion.
+   (Pointer tilt + glow rAF loop are also gated in JS.) */
+@media (prefers-reduced-motion: reduce) {
+  .rise-in,
+  .animate-blob,
+  .animate-blob-delay,
+  .animate-slide-up {
+    animation: none !important;
+  }
+  .card-hover:hover { transform: none; }
+  .glass-card-hover { transform: none !important; transition: none !important; }
+  [data-lg-scene] *,
+  [data-lg-scene] {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

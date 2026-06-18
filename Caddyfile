@@ -1,0 +1,30 @@
+# Caddyfile — Udyogi HRMS (IP-only, plain HTTP, no domain/cert)
+#
+# Caddy listens on :80 INSIDE its container. The host port (8080 for test, 80 for
+# go-live) is set in docker-compose. So this file does not change between test and prod.
+#
+# handle blocks are mutually exclusive and matched most-specific-first, which avoids
+# the ordering surprises you can hit when stacking bare `reverse_proxy /path/*` lines.
+
+:80 {
+	# eSSL biometric devices push punches here -> FastAPI
+	handle /iclock/* {
+		reverse_proxy udyogi_backend:8000
+	}
+
+	# All API calls -> FastAPI (path is preserved, so /api/health hits /api/health)
+	handle /api/* {
+		reverse_proxy udyogi_backend:8000
+	}
+
+	# Everything else -> Next.js
+	handle {
+		reverse_proxy udyogi_frontend:3000
+	}
+
+	# Optional: basic access log to container stdout (view with `docker compose logs caddy`)
+	log {
+		output stdout
+		format console
+	}
+}

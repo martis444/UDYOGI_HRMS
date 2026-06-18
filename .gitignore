@@ -1,0 +1,37 @@
+# ─── Dependencies ───────────────────────────────────────────
+node_modules/
+**/node_modules/
+
+# ─── Next.js build output ───────────────────────────────────
+.next/
+**/.next/
+out/
+
+# ─── Python ─────────────────────────────────────────────────
+venv/
+**/venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# ─── Secrets / env — NEVER commit real values ───────────────
+.env
+.env.*
+# ...but DO keep the documented templates (they contain no secrets)
+!.env.example
+!backend/.env.production.template
+
+# ─── Database seed dump — contains encrypted employee PII ────
+backend/sql/init/
+
+# ─── Runtime data ───────────────────────────────────────────
+uploads/*
+!uploads/.gitkeep
+caddy_data/
+caddy_config/
+
+# ─── OS / editor / logs ─────────────────────────────────────
+.DS_Store
+*.log

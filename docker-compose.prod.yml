@@ -1,0 +1,87 @@
+# docker-compose.prod.yml — Udyogi HRMS
+# TEST DEPLOYMENT profile: Caddy is on host port 8080 so it never touches the
+# existing system on port 80. Postgres is internal-only (no host port).
+#
+# When you are ready for REAL go-live (later, after sign-off), change the caddy
+# port mapping from "8080:80" to "80:80" and bring up only caddy. Nothing else changes.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: udyogi_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Runs ONLY on first boot when the data volume is empty.
+      # Put exactly ONE file here: your local dump (see the guide, Phase 2).
+      - ./backend/sql/init:/docker-entrypoint-initdb.d:ro
+    # NO ports: section on purpose — the DB is reachable only by the backend,
+    # over the private compose network. It is NOT exposed to the server or internet.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - udyogi_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: udyogi_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.production
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # No host ports — only Caddy talks to it (over udyogi_net).
+    networks:
+      - udyogi_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Build-time, baked into the JS bundle. Relative "/api" => calls always go
+        # to the same origin that served the page (works on :8080 now and :80 later).
+        NEXT_PUBLIC_API_URL: /api
+    container_name: udyogi_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - udyogi_net
+
+  caddy:
+    image: caddy:2
+    container_name: udyogi_caddy
+    restart: unless-stopped
+    ports:
+      - "8080:80"          # TEST: host 8080 -> caddy 80. Change to "80:80" at go-live.
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - udyogi_net
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  udyogi_net:
+    driver: bridge

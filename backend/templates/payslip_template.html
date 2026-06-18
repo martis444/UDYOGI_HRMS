@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4 portrait; margin: 14pt 16pt 14pt 16pt; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 9pt; color: #000; line-height: 1.3; }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  .hdr-sep { border-bottom: 2pt solid #000; padding-bottom: 7pt; margin-bottom: 5pt; }
+  .co-name  { font-size: 13pt; font-weight: bold; }
+  .co-addr  { font-size: 8pt; color: #333; margin-top: 1pt; }
+
+  .title { text-align: center; font-size: 10pt; font-weight: bold; border: 1pt solid #000;
+           padding: 3pt 6pt; margin-bottom: 5pt; background: #efefef; letter-spacing: 0.5pt; }
+
+  .emp-tbl td { border: 1pt solid #bbb; padding: 2pt 5pt; vertical-align: top; font-size: 8.5pt; }
+  .emp-lbl  { font-weight: bold; }
+
+  .main th { border: 1pt solid #aaa; background: #ddd; padding: 3pt 4pt;
+             text-align: center; font-weight: bold; font-size: 8.5pt; }
+  .main td { border: 1pt solid #ccc; padding: 2pt 4pt; font-size: 8.5pt; vertical-align: top; }
+  .amt { text-align: right; }
+
+  .ftr td { background: #cccccc; font-weight: bold; }
+  .net td { background: #b0b0b0; font-weight: bold; font-size: 10pt; }
+
+  .words-row { font-size: 8.5pt; margin: 4pt 0 5pt 0; }
+
+  .btm-tbl td { border: 1pt solid #bbb; padding: 3pt 5pt; font-size: 8.5pt; vertical-align: top; }
+
+  .sign { text-align: right; margin-top: 22pt; font-size: 9pt; font-weight: bold; }
+  .disc { font-size: 7.5pt; color: #555; margin-top: 7pt; border-top: 1pt dashed #bbb; padding-top: 4pt; }
+</style>
+</head>
+<body>
+
+<!-- ─── Header ───────────────────────────────────────────────────────────── -->
+<div class="hdr-sep">
+  <table>
+    <tr>
+      <td style="width:62pt; padding-right:10pt; border:none; vertical-align:middle;">
+        {% if logo_b64 %}
+        <img src="{{ logo_b64 }}" alt="" style="height:44pt; width:auto; display:block;">
+        {% else %}
+        <div style="background:#cc0000;color:#fff;font-size:22pt;font-weight:bold;padding:6pt 10pt;line-height:1;">U</div>
+        {% endif %}
+      </td>
+      <td style="border:none; vertical-align:middle;">
+        <div class="co-name">{{ entity_name | upper }}</div>
+        {% if entity_address %}
+        <div class="co-addr">{{ entity_address }}</div>
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+</div>
+
+<!-- ─── Title ────────────────────────────────────────────────────────────── -->
+<div class="title">PAYSLIP FOR THE MONTH OF {{ month_year }}</div>
+
+<!-- ─── Employee info (2-column) ─────────────────────────────────────────── -->
+<table class="emp-tbl" style="margin-bottom:5pt;">
+  <tr>
+    <td style="width:50%;">
+      <div><span class="emp-lbl">Name:</span> {{ name }} ({{ emp_code }})</div>
+      <div><span class="emp-lbl">Dept:</span> {{ department or '—' }}</div>
+      {% if salary_effective_from_display %}<div><span class="emp-lbl">Salary w.e.f:</span> {{ salary_effective_from_display }}</div>{% endif %}
+    </td>
+    <td style="width:50%;">
+      <div><span class="emp-lbl">Desig:</span> {{ designation or '—' }}</div>
+      {% if pf_number %}<div><span class="emp-lbl">PF No:</span> {{ pf_number }}</div>{% endif %}
+      {% if esic_emp and esi_no %}<div><span class="emp-lbl">ESI No:</span> {{ esi_no }}</div>{% endif %}
+      <div><span class="emp-lbl">Series:</span> {{ location_city }}</div>
+      {% if uan_no %}<div><span class="emp-lbl">UAN No:</span> {{ uan_no }}</div>{% endif %}
+      <div><span class="emp-lbl">OT Hrs:</span> {{ ot_hours if ot_hours else '—' }}</div>
+    </td>
+  </tr>
+</table>
+
+<!-- ─── Earnings / Deductions table ──────────────────────────────────────── -->
+<table class="main">
+  <thead>
+    <tr>
+      <th style="width:13%;">Attendance</th>
+      <th style="width:19%;">Earning Component</th>
+      <th style="width:10%;" class="amt">Rate (₹)</th>
+      <th style="width:10%;" class="amt">Amount (₹)</th>
+      <th style="width:28%;">Deduction Component</th>
+      <th style="width:10%;" class="amt">Amount (₹)</th>
+    </tr>
+  </thead>
+  <tbody>
+
+    <!-- Row 1: PR | BASIC | P.F. -->
+    <tr>
+      <td>PR: {{ days_p if days_p is not none else '—' }}</td>
+      <td>BASIC</td>
+      <td class="amt">{{ basic_rate }}</td>
+      <td class="amt">{{ basic_amount }}</td>
+      <td>P.F. (12%)</td>
+      <td class="amt">{{ pf_emp }}</td>
+    </tr>
+
+    <!-- Row 2: WO | HRA | ESIC (if applicable) -->
+    <tr>
+      <td>WO: {{ days_wo if days_wo is not none else '—' }}</td>
+      <td>H.R.A.</td>
+      <td class="amt">{{ hra_rate }}</td>
+      <td class="amt">{{ hra_amount }}</td>
+      {% if esic_emp %}
+      <td>E.S.I.C. (0.75%)</td>
+      <td class="amt">{{ esic_emp }}</td>
+      {% else %}
+      <td></td><td></td>
+      {% endif %}
+    </tr>
+
+    <!-- Row 3: HO | CCA (if > 0) | P.TAX (if > 0) -->
+    <tr>
+      <td>HO: {{ days_h if days_h is not none else '—' }}</td>
+      {% if cca_rate %}
+      <td>C.C.A.</td>
+      <td class="amt">{{ cca_rate }}</td>
+      <td class="amt">{{ cca_amount }}</td>
+      {% else %}
+      <td></td><td></td><td></td>
+      {% endif %}
+      {% if pt %}
+      <td>P. TAX</td>
+      <td class="amt">{{ pt }}</td>
+      {% else %}
+      <td></td><td></td>
+      {% endif %}
+    </tr>
+
+    <!-- Row 4: ABS | SPECIAL AL. | Loan EMI (if > 0) -->
+    <tr>
+      <td>{% if days_a %}ABS: {{ days_a }}{% endif %}</td>
+      <td>SPECIAL AL.</td>
+      <td class="amt">{{ spl_rate }}</td>
+      <td class="amt">{{ spl_amount }}</td>
+      {% if loan_emi %}
+      <td>Loan EMI</td>
+      <td class="amt">{{ loan_emi }}</td>
+      {% else %}
+      <td></td><td></td>
+      {% endif %}
+    </tr>
+
+    <!-- Row 5: LEAVE TRAV (conditional) -->
+    {% if lt_rate %}
+    <tr>
+      <td></td>
+      <td>LEAVE TRAV</td>
+      <td class="amt">{{ lt_rate }}</td>
+      <td class="amt">{{ lt_amount }}</td>
+      <td></td><td></td>
+    </tr>
+    {% endif %}
+
+    <!-- Row 6: D.A. (conditional) -->
+    {% if da_rate %}
+    <tr>
+      <td></td>
+      <td>D.A.</td>
+      <td class="amt">{{ da_rate }}</td>
+      <td class="amt">{{ da_amount }}</td>
+      <td></td><td></td>
+    </tr>
+    {% endif %}
+
+    <!-- Row 7: OTHER ALL. (conditional) -->
+    {% if other_allowance %}
+    <tr>
+      <td></td>
+      <td>OTHER ALL.</td>
+      <td class="amt">{{ other_allowance }}</td>
+      <td class="amt">{{ other_allowance }}</td>
+      <td></td><td></td>
+    </tr>
+    {% endif %}
+
+    <!-- Footer row 1: Paydays / Total Earnings / Total Deductions -->
+    <tr class="ftr">
+      <td>Paydays: {{ pay_days if pay_days is not none else total_days }}</td>
+      <td colspan="2">TOTAL EARNINGS</td>
+      <td class="amt">{{ total_earnings }}</td>
+      <td>TOTAL DEDUCTIONS</td>
+      <td class="amt">{{ total_deduction }}</td>
+    </tr>
+
+    <!-- Footer row 2: Gross Rate / Net Pay -->
+    <tr class="net">
+      <td colspan="3" style="text-align:center;">Gr. Rate: &#8377; {{ gross_rate }}</td>
+      <td colspan="3" style="text-align:right;">NET PAY: &#8377; {{ net_pay }}</td>
+    </tr>
+
+  </tbody>
+</table>
+
+<!-- ─── Amount in words ───────────────────────────────────────────────────── -->
+<div class="words-row"><strong>INR in Words:</strong> {{ amount_in_words }}</div>
+
+<!-- ─── Bottom: Leave balance / Payment / Bank account ───────────────────── -->
+<table class="btm-tbl">
+  <tr>
+    <td style="width:45%;">
+      <strong>Leave Balance:</strong>
+      {% if leave_balances %}
+        {% for leave_type, bal_val in leave_balances.items() %}{{ leave_type }}: {{ bal_val | int }}  {% endfor %}
+      {% else %}&#8212;{% endif %}
+    </td>
+    <td style="width:25%; text-align:center;"><strong>Payment By:</strong> BANK</td>
+    <td style="width:30%; text-align:right;"><strong>Bank A/c No:</strong> {{ bank_acc_masked or '&#8212;' }}</td>
+  </tr>
+</table>
+
+<!-- ─── Disclaimer / Signatory ───────────────────────────────────────────── -->
+<div class="disc">This is a computer-generated payslip and does not require a physical signature.</div>
+<div class="sign">Authorised Signatory</div>
+
+</body>
+</html>

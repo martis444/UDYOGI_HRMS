@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.production.template
+sql/init/
+venv/
+__pycache__/
+*.pyc
+uploads/
+*.sql.gz

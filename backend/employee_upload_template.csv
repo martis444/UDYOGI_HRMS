@@ -1,0 +1,2 @@
+emp_code,name,father_name,dob,gender,marital_status,mobile,email,doj,entity_id,location_id,department_id,designation,grade_id,shift_id,basic,hra,da,spl,cca,pf_applicable,pt_applicable,pan,aadhaar,bank_name,bank_acc,ifsc,status
+,Ramesh Kumar Singh,Suresh Singh,1990-05-15,male,Married,9876543210,ramesh.singh@example.com,2025-01-15,UMPL,jpr,15,Operator,10,1,5000,2000,1000,500,0,true,false,ABCDE1234F,123456789012,State Bank of India,12345678901,SBIN0001234,active
