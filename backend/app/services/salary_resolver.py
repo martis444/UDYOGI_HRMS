@@ -1,9 +1,9 @@
 """
 Resolve which salary structure applied to an employee during a payroll period.
-Period is computed by period_calculator (26th prev month -> 25th current month).
+Period is computed by period_calculator (the full calendar month, 1st -> last).
 
-Increments always take effect from a payroll-cycle boundary (the 26th), so a
-single structure covers an entire period -- there is never within-period
+Increments always take effect from the 1st of a month, so a single structure
+covers an entire calendar-month period -- there is never within-period
 proration of two rates.
 """
 
@@ -19,7 +19,7 @@ def get_structure_for_period(
 ) -> SalaryStructure | None:
     """
     Returns the salary structure effective during the payroll period for
-    (year, month). Since increments align to cycle boundaries, exactly one
+    (year, month). Since increments align to the 1st of a month, exactly one
     structure covers the whole period. Returns None for pre-history employees.
     """
     period_start, period_end = get_period_dates(year, month)

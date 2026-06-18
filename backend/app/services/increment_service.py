@@ -1,8 +1,10 @@
 """
 Apply an effective-dated salary increment.
 
-Increments ALWAYS take effect from a payroll-cycle boundary (the 26th -- the
-start of a payroll period). Never mid-period. One payslip = one structure.
+Increments ALWAYS take effect from the 1st of a month (the start of a calendar
+pay period). Never mid-month. One payslip = one structure — the month an
+increment is granted stays at the old rate; the new rate applies from the 1st
+of the following month.
 
 The active structure is closed (effective_to = effective_from - 1 day) and a
 new active structure is inserted. The employees salary columns are kept in sync
@@ -42,10 +44,10 @@ def apply_increment(
     new_values may contain any subset of the 7 salary components; omitted
     components are carried forward from the current active structure.
     """
-    # 1. Effective date must be a cycle boundary (the 26th).
-    if effective_from.day != 26:
+    # 1. Effective date must be the 1st of a month (calendar pay-period start).
+    if effective_from.day != 1:
         raise ValueError(
-            "Increment must be effective from the 26th (payroll cycle start)"
+            "Increment must be effective from the 1st of the month"
         )
 
     # 2. Current active structure.

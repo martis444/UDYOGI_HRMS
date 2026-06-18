@@ -27,7 +27,7 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
     pt_state = location.pt_state_code if location else "NIL"
 
     # Salary source = the structure effective during THIS payroll period.
-    # Increments align to cycle boundaries, so one structure covers the period.
+    # Increments align to the 1st of a month, so one structure covers the period.
     # Fall back to the live employee columns for pre-history employees / safety.
     struct = get_structure_for_period(db, emp_code, year, month)
     src = struct if struct is not None else emp

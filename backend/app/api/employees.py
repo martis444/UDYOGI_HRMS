@@ -677,7 +677,7 @@ def bulk_import_commit(
 # ---------------------------------------------------------------------------
 
 class IncrementBody(BaseModel):
-    effective_from: date            # must be the 26th (payroll cycle start)
+    effective_from: date            # must be the 1st of a month (pay-period start)
     basic: Optional[Decimal] = None
     hra: Optional[Decimal] = None
     da: Optional[Decimal] = None
@@ -718,7 +718,7 @@ def apply_salary_increment(
     current_user: User = Depends(require_role("super_admin", "entity_admin")),
     db: Session = Depends(get_db),
 ):
-    """Apply an effective-dated salary increment (effective_from must be a 26th)."""
+    """Apply an effective-dated salary increment (effective_from must be the 1st)."""
     emp = db.query(Employee).filter(Employee.emp_code == emp_code).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")

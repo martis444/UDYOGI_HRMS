@@ -161,8 +161,8 @@ export default function AboutPage() {
           Professional Tax — per employee, per location, per month.
         </p>
         <p className="text-[#1A1A1A] text-sm leading-relaxed">
-          Payroll runs on the 26th-to-25th cycle, with effective-dated salary structures so historical
-          payslips stay accurate, and locked months that freeze finalized payroll.
+          Payroll runs on a calendar-month cycle (paid on the 26th), with effective-dated salary
+          structures so historical payslips stay accurate, and locked months that freeze finalized payroll.
         </p>
         <div className="flex items-center gap-4 pt-2 text-sm">
           <span className="text-[#6B6B6B]">Version {APP_META.version} · {APP_META.releaseDate}</span>

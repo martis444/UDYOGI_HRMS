@@ -1,8 +1,11 @@
 """
-Pay period: 26th of the previous calendar month → 25th of the current month.
+Pay period: the full calendar month (1st → last day).
 Example: payroll_year=2026, payroll_month=4 (April)
-  → period_start = 2026-03-26
-  → period_end   = 2026-04-25
+  → period_start = 2026-04-01
+  → period_end   = 2026-04-30
+
+Salary is paid on the 26th, but the period it covers is the calendar month, and
+salary increments take effect from the 1st of a month (see increment_service).
 
 Working days for a location = all days in period
   minus Sundays (weekday() == 6)
@@ -10,6 +13,7 @@ Working days for a location = all days in period
         location_id = employee's location_id OR location_id IS NULL
 """
 
+import calendar
 from datetime import date, timedelta
 
 from sqlalchemy import or_
@@ -19,11 +23,9 @@ from app.models.employee import PublicHoliday
 
 
 def get_period_dates(year: int, month: int) -> tuple[date, date]:
-    if month == 1:
-        period_start = date(year - 1, 12, 26)
-    else:
-        period_start = date(year, month - 1, 26)
-    period_end = date(year, month, 25)
+    last_day = calendar.monthrange(year, month)[1]
+    period_start = date(year, month, 1)
+    period_end = date(year, month, last_day)
     return period_start, period_end
 
 

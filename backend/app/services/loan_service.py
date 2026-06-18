@@ -6,8 +6,8 @@ Invariant: loans.outstanding = principal - SUM(actual_emi for applied schedule r
 double-counts — recompute_outstanding always rebuilds the balance from the ledger.
 
 Period model: a loan started in payroll month (sy, sm) covers payroll months
-(sy, sm) .. +tenure-1 (month-ordinal), while status='active'. Aligns to the 26th
-payroll cycle via the (year, month) the engine processes.
+(sy, sm) .. +tenure-1 (month-ordinal), while status='active'. Keyed to the
+(year, month) the engine processes (one calendar-month period per payroll run).
 """
 
 import calendar
