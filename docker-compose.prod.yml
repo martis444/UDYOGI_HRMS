@@ -7,7 +7,9 @@
 
 services:
   postgres:
-    image: postgres:16
+    # PG18 to match the pg_dump source (local DB is PostgreSQL 18; the dump uses
+    # PG17+ settings like transaction_timeout that PG16 would reject on load).
+    image: postgres:18
     container_name: udyogi_db
     restart: unless-stopped
     environment:
@@ -15,7 +17,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # PG18 images expect the mount at /var/lib/postgresql (data lives in a
+      # version subdir), not the old /var/lib/postgresql/data path.
+      - postgres_data:/var/lib/postgresql
       # Runs ONLY on first boot when the data volume is empty.
       # Put exactly ONE file here: your local dump (see the guide, Phase 2).
       - ./backend/sql/init:/docker-entrypoint-initdb.d:ro
