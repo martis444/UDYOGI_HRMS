@@ -2,7 +2,11 @@
 
 import axios from "axios";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// `??` (not `||`) so an explicit empty value is honored: empty = same-origin
+// (relative) base, used in the Docker/Caddy deploy where every request path
+// already starts with "/api". Dev sets a real origin (e.g. http://localhost:8000)
+// in .env.local; when unset entirely we fall back to localhost:8000.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export const api = axios.create({
   baseURL: API_BASE,

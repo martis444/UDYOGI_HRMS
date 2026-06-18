@@ -55,9 +55,11 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Build-time, baked into the JS bundle. Relative "/api" => calls always go
-        # to the same origin that served the page (works on :8080 now and :80 later).
-        NEXT_PUBLIC_API_URL: /api
+        # Build-time, baked into the JS bundle. EMPTY = same-origin (relative) base.
+        # The app code already prefixes every request with "/api", so requests go to
+        # the same origin that served the page (works on :8080 now and :80 later).
+        # (Do NOT set "/api" here — the code would then call /api/api/... → 404.)
+        NEXT_PUBLIC_API_URL: ""
     container_name: udyogi_frontend
     restart: unless-stopped
     depends_on:
