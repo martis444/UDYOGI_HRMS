@@ -73,14 +73,15 @@ function resolvePT(stateCode: string, gross: number, gender: string, month: numb
 // ─── Payroll calculator ───────────────────────────────────────────────────────
 
 function calcPayroll(
-  basic: number, hra: number, spl: number, cca: number,
+  basic: number, hra: number, spl: number, cca: number, lta: number, otherAllowance: number,
   stateCode: string, gender: string, month: number, allRows: StatutoryRow[]
 ) {
-  const gross = basic + hra + spl + cca;
+  // Statutory gross excludes other_allowance (added back to net after deductions).
+  const gross = basic + hra + spl + cca + lta;
   const pf = Math.min(Math.round(basic * 0.12), 1800);
   const esic = gross <= 21000 ? Math.ceil(gross * 0.0075) : 0;
   const pt = resolvePT(stateCode, gross, gender, month, allRows);
-  const net = gross - pf - esic - pt;
+  const net = gross - pf - esic - pt + otherAllowance;
   return { gross, pf, esic, pt, net };
 }
 
@@ -180,6 +181,8 @@ function LiveCalculator({ allRows }: { allRows: StatutoryRow[] }) {
   const [hra, setHra] = useState("2000");
   const [spl, setSpl] = useState("800");
   const [cca, setCca] = useState("0");
+  const [lta, setLta] = useState("0");
+  const [otherAllowance, setOtherAllowance] = useState("0");
   const [location, setLocation] = useState("Kolkata");
   const [gender, setGender] = useState("male");
   const [month, setMonth] = useState(new Date().getMonth() + 1);
@@ -188,8 +191,10 @@ function LiveCalculator({ allRows }: { allRows: StatutoryRow[] }) {
   const result = calcPayroll(
     Number(basic) || 0, Number(hra) || 0,
     Number(spl) || 0, Number(cca) || 0,
+    Number(lta) || 0, Number(otherAllowance) || 0,
     loc.state_code, gender, month, allRows
   );
+  const perDay = Math.round(result.gross / 30);
 
   const inputCls = "bg-white border border-[#E2E2DF] rounded-xl px-3 py-2 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E5202E] focus:ring-1 focus:ring-[#E5202E]/30 w-full min-h-[44px]";
 
@@ -224,6 +229,15 @@ function LiveCalculator({ allRows }: { allRows: StatutoryRow[] }) {
           <label className="block">
             <span className="text-[#5A5A5A] text-xs mb-1 block">CCA (₹)</span>
             <input type="number" value={cca} onChange={(e) => setCca(e.target.value)} className={inputCls} min="0" />
+          </label>
+          <label className="block">
+            <span className="text-[#5A5A5A] text-xs mb-1 block">LTA / Leave travel (₹)</span>
+            <input type="number" value={lta} onChange={(e) => setLta(e.target.value)} className={inputCls} min="0" />
+          </label>
+          <label className="block">
+            <span className="text-[#5A5A5A] text-xs mb-1 block">Other allowance (₹)</span>
+            <input type="number" value={otherAllowance} onChange={(e) => setOtherAllowance(e.target.value)} className={inputCls} min="0" />
+            <span className="text-[#6B6B6B] text-[10px] mt-1 block">Excluded from PF/ESIC/PT; added to net.</span>
           </label>
         </div>
 
@@ -261,13 +275,17 @@ function LiveCalculator({ allRows }: { allRows: StatutoryRow[] }) {
           <p className="text-[#5A5A5A] text-[10px] uppercase tracking-wide font-semibold mb-3">Result</p>
           <div className="bg-[#F4F4F2] rounded-xl p-4 space-y-3 border border-[#E2E2DF]">
             <div className="flex justify-between items-center">
-              <span className="text-[#5A5A5A] text-xs">Gross salary</span>
-              <span className="text-[#1A1A1A] font-semibold text-sm">₹{fmt(result.gross)}</span>
+              <span className="text-[#1A1A1A] font-semibold text-sm">GROSS</span>
+              <span className="text-[#1A1A1A] font-bold text-lg">₹{fmt(result.gross)}</span>
             </div>
+            <p className="text-[#6B6B6B] text-[10px] -mt-1">basic + hra + spl + cca + lta · 1 day = gross ÷ 30 = ₹{fmt(perDay)}</p>
             <div className="h-px bg-[#E2E2DF]" />
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <span className="text-[#5A5A5A] text-xs">PF (employee 12%)</span>
+                <span className="text-[#5A5A5A] text-xs">
+                  PF (employee 12% of basic, cap ₹1,800)
+                  {result.pf >= 1800 && <span className="ml-1 text-[10px] text-[#D97706]">capped</span>}
+                </span>
                 <span className="text-[#DC2626] text-sm font-medium">−₹{fmt(result.pf)}</span>
               </div>
               <div className="flex justify-between items-center">
@@ -283,21 +301,29 @@ function LiveCalculator({ allRows }: { allRows: StatutoryRow[] }) {
                 </span>
                 <span className="text-[#DC2626] text-sm font-medium">−₹{fmt(result.pt)}</span>
               </div>
+              {Number(otherAllowance) > 0 && (
+                <div className="flex justify-between items-center">
+                  <span className="text-[#5A5A5A] text-xs">Other allowance (added back)</span>
+                  <span className="text-[#16A34A] text-sm font-medium">+₹{fmt(Number(otherAllowance))}</span>
+                </div>
+              )}
             </div>
             <div className="h-px bg-[#E2E2DF]" />
             <div className="flex justify-between items-center pt-1">
-              <span className="text-[#1A1A1A] font-semibold text-sm">Net pay</span>
+              <span className="text-[#1A1A1A] font-semibold text-sm">NET PAY</span>
               <span className="font-bold text-xl" style={{ color: "#E5202E" }}>₹{fmt(result.net)}</span>
             </div>
+            <p className="text-[#6B6B6B] text-[10px] -mt-1">gross − PF − ESIC − PT + other allowance</p>
           </div>
 
           {/* Employer cost breakdown */}
           <div className="mt-3 bg-white border border-[#E2E2DF] rounded-xl p-3 space-y-1.5">
             <p className="text-[#5A5A5A] text-[10px] uppercase tracking-wide font-semibold mb-2">Employer cost</p>
             <div className="flex justify-between">
-              <span className="text-[#5A5A5A] text-xs">PF (employer 13%)</span>
+              <span className="text-[#5A5A5A] text-xs">PF (employer 13% of basic, cap ₹2,340)</span>
               <span className="text-[#5A5A5A] text-xs font-medium">₹{fmt(Math.min(Math.round(Number(basic) * 0.13), 2340))}</span>
             </div>
+            <p className="text-[#6B6B6B] text-[10px]">Cap reached when basic ≥ ₹15,000 (₹1,800 = 12% of the ₹15,000 PF ceiling).</p>
             {result.gross <= 21000 && (
               <div className="flex justify-between">
                 <span className="text-[#5A5A5A] text-xs">ESIC (employer 3.25%)</span>

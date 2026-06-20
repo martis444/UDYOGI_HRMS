@@ -31,7 +31,9 @@
 
   .btm-tbl td { border: 1pt solid #bbb; padding: 3pt 5pt; font-size: 8.5pt; vertical-align: top; }
 
-  .sign { text-align: right; margin-top: 22pt; font-size: 9pt; font-weight: bold; }
+  .leave-tbl th { border: 1pt solid #aaa; background: #ddd; padding: 2pt 5pt; font-size: 8.5pt; font-weight: bold; }
+  .leave-tbl td { border: 1pt solid #ccc; padding: 2pt 5pt; font-size: 8.5pt; }
+
   .disc { font-size: 7.5pt; color: #555; margin-top: 7pt; border-top: 1pt dashed #bbb; padding-top: 4pt; }
 </style>
 </head>
@@ -104,44 +106,32 @@
       <td class="amt">{{ pf_emp }}</td>
     </tr>
 
-    <!-- Row 2: WO | HRA | ESIC (if applicable) -->
+    <!-- Row 2: WO | HRA | ESIC -->
     <tr>
       <td>WO: {{ days_wo if days_wo is not none else '—' }}</td>
       <td>H.R.A.</td>
       <td class="amt">{{ hra_rate }}</td>
       <td class="amt">{{ hra_amount }}</td>
-      {% if esic_emp %}
       <td>E.S.I.C. (0.75%)</td>
       <td class="amt">{{ esic_emp }}</td>
-      {% else %}
-      <td></td><td></td>
-      {% endif %}
     </tr>
 
-    <!-- Row 3: HO | CCA (if > 0) | P.TAX (if > 0) -->
+    <!-- Row 3: HO | SPECIAL AL. | P. TAX -->
     <tr>
       <td>HO: {{ days_h if days_h is not none else '—' }}</td>
-      {% if cca_rate %}
-      <td>C.C.A.</td>
-      <td class="amt">{{ cca_rate }}</td>
-      <td class="amt">{{ cca_amount }}</td>
-      {% else %}
-      <td></td><td></td><td></td>
-      {% endif %}
-      {% if pt %}
-      <td>P. TAX</td>
-      <td class="amt">{{ pt }}</td>
-      {% else %}
-      <td></td><td></td>
-      {% endif %}
-    </tr>
-
-    <!-- Row 4: ABS | SPECIAL AL. | Loan EMI (if > 0) -->
-    <tr>
-      <td>{% if days_a %}ABS: {{ days_a }}{% endif %}</td>
       <td>SPECIAL AL.</td>
       <td class="amt">{{ spl_rate }}</td>
       <td class="amt">{{ spl_amount }}</td>
+      <td>P. TAX</td>
+      <td class="amt">{{ pt }}</td>
+    </tr>
+
+    <!-- Row 4: ABS | C.C.A. (always) | Loan EMI (if > 0) -->
+    <tr>
+      <td>{% if days_a %}ABS: {{ days_a }}{% endif %}</td>
+      <td>C.C.A.</td>
+      <td class="amt">{{ cca_rate }}</td>
+      <td class="amt">{{ cca_amount }}</td>
       {% if loan_emi %}
       <td>Loan EMI</td>
       <td class="amt">{{ loan_emi }}</td>
@@ -150,18 +140,21 @@
       {% endif %}
     </tr>
 
-    <!-- Row 5: LEAVE TRAV (conditional) -->
-    {% if lt_rate %}
+    <!-- Row 5: LEAVE TRAV (always) | LD (if > 0) -->
     <tr>
       <td></td>
       <td>LEAVE TRAV</td>
       <td class="amt">{{ lt_rate }}</td>
       <td class="amt">{{ lt_amount }}</td>
+      {% if ld %}
+      <td>LD (Late Deduction)</td>
+      <td class="amt">{{ ld }}</td>
+      {% else %}
       <td></td><td></td>
+      {% endif %}
     </tr>
-    {% endif %}
 
-    <!-- Row 7: OTHER ALL. (conditional) -->
+    <!-- Row 6: OTHER ALL. (conditional) -->
     {% if other_allowance %}
     <tr>
       <td></td>
@@ -181,10 +174,18 @@
       <td class="amt">{{ total_deduction }}</td>
     </tr>
 
-    <!-- Footer row 2: Gross Rate / Net Pay -->
+    <!-- Footer row 2: GROSS (full monthly rate) -->
+    <tr class="ftr">
+      <td colspan="3">GROSS (Rate)</td>
+      <td class="amt">{{ gross_rate }}</td>
+      <td></td><td></td>
+    </tr>
+
+    <!-- Footer row 3: NET PAY (take-home) -->
     <tr class="net">
-      <td colspan="3" style="text-align:center;">Gr. Rate: &#8377; {{ gross_rate }}</td>
-      <td colspan="3" style="text-align:right;">NET PAY: &#8377; {{ net_pay }}</td>
+      <td colspan="3">NET PAY</td>
+      <td class="amt">&#8377; {{ net_pay }}</td>
+      <td></td><td></td>
     </tr>
 
   </tbody>
@@ -193,23 +194,44 @@
 <!-- ─── Amount in words ───────────────────────────────────────────────────── -->
 <div class="words-row"><strong>INR in Words:</strong> {{ amount_in_words }}</div>
 
-<!-- ─── Bottom: Leave balance / Payment / Bank account ───────────────────── -->
-<table class="btm-tbl">
+<!-- ─── Leave balance (TB / ULB / ALB × CL | SL | PL) ─────────────────────── -->
+<table class="leave-tbl" style="margin-bottom:5pt;">
   <tr>
-    <td style="width:45%;">
-      <strong>Leave Balance:</strong>
-      {% if leave_balances %}
-        {% for leave_type, bal_val in leave_balances.items() %}{{ leave_type }}: {{ bal_val | int }}  {% endfor %}
-      {% else %}&#8212;{% endif %}
-    </td>
-    <td style="width:25%; text-align:center;"><strong>Payment By:</strong> BANK</td>
-    <td style="width:30%; text-align:right;"><strong>Bank A/c No:</strong> {{ bank_acc_masked or '&#8212;' }}</td>
+    <th style="width:25%; text-align:left;">Leave Balance</th>
+    <th class="amt">CL</th>
+    <th class="amt">SL</th>
+    <th class="amt">PL</th>
+  </tr>
+  <tr>
+    <td>TB (Total)</td>
+    <td class="amt">{{ leave.cl.tb | int }}</td>
+    <td class="amt">{{ leave.sl.tb | int }}</td>
+    <td class="amt">{{ leave.pl.tb | int }}</td>
+  </tr>
+  <tr>
+    <td>ULB (Used)</td>
+    <td class="amt">{{ leave.cl.ulb | int }}</td>
+    <td class="amt">{{ leave.sl.ulb | int }}</td>
+    <td class="amt">{{ leave.pl.ulb | int }}</td>
+  </tr>
+  <tr>
+    <td>ALB (Available)</td>
+    <td class="amt">{{ leave.cl.alb | int }}</td>
+    <td class="amt">{{ leave.sl.alb | int }}</td>
+    <td class="amt">{{ leave.pl.alb | int }}</td>
   </tr>
 </table>
 
-<!-- ─── Disclaimer / Signatory ───────────────────────────────────────────── -->
+<!-- ─── Bottom: Payment / Bank account ───────────────────────────────────── -->
+<table class="btm-tbl">
+  <tr>
+    <td style="width:50%;"><strong>Payment By:</strong> BANK</td>
+    <td style="width:50%; text-align:right;"><strong>Bank A/c No:</strong> {{ bank_acc_masked or '&#8212;' }}</td>
+  </tr>
+</table>
+
+<!-- ─── Disclaimer ───────────────────────────────────────────────────────── -->
 <div class="disc">This is a computer-generated payslip and does not require a physical signature.</div>
-<div class="sign">Authorised Signatory</div>
 
 </body>
 </html>

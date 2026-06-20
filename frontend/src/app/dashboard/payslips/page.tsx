@@ -45,6 +45,7 @@ interface PayslipData {
   esic_ern: number;
   pt: number;
   loan_emi: number;
+  ld: number;
   other_deduction: number;
   total_deduction: number;
   net_pay: number;
@@ -74,11 +75,18 @@ interface PayslipData {
   uan_no: string | null;
   esi_no: string | null;
   leave_balances: Record<string, number>;
+  leave: {
+    cl: LeaveBucket;
+    sl: LeaveBucket;
+    pl: LeaveBucket;
+  };
   amount_in_words: string;
   generated_at: string | null;
   salary_effective_from?: string | null;
   salary_effective_from_display?: string | null;
 }
+
+interface LeaveBucket { tb: number; ulb: number; alb: number; }
 
 interface EmpOption { emp_code: string; name: string; entity_id: string; }
 
@@ -109,8 +117,6 @@ function fmtAmt(n: number) {
 // ─── Payslip document card (print-accurate white card) ────────────────────────
 
 function PayslipDocument({ data }: { data: PayslipData }) {
-  const leaveEntries = Object.entries(data.leave_balances ?? {});
-
   return (
     <div
       id="payslip-print-area"
@@ -186,50 +192,32 @@ function PayslipDocument({ data }: { data: PayslipData }) {
               <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.pf_emp)}</td>
             </tr>
 
-            {/* Row 2: WO | HRA | ESIC (conditional) */}
+            {/* Row 2: WO | HRA | ESIC */}
             <tr>
               <td style={tdStyle}>WO: {data.days_wo ?? "—"}</td>
               <td style={tdStyle}>H.R.A.</td>
               <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.hra_rate)}</td>
               <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.hra_amount)}</td>
-              {data.esic_emp > 0 ? (
-                <>
-                  <td style={tdStyle}>E.S.I.C. (0.75%)</td>
-                  <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.esic_emp)}</td>
-                </>
-              ) : (
-                <><td style={tdStyle}></td><td style={tdStyle}></td></>
-              )}
+              <td style={tdStyle}>E.S.I.C. (0.75%)</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.esic_emp)}</td>
             </tr>
 
-            {/* Row 3: HO | CCA (conditional) | P.TAX (conditional) */}
+            {/* Row 3: HO | SPECIAL AL. | P. TAX */}
             <tr>
               <td style={tdStyle}>HO: {data.days_h ?? "—"}</td>
-              {data.cca_rate > 0 ? (
-                <>
-                  <td style={tdStyle}>C.C.A.</td>
-                  <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.cca_rate)}</td>
-                  <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.cca_amount)}</td>
-                </>
-              ) : (
-                <><td style={tdStyle}></td><td style={tdStyle}></td><td style={tdStyle}></td></>
-              )}
-              {data.pt > 0 ? (
-                <>
-                  <td style={tdStyle}>P. TAX</td>
-                  <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.pt)}</td>
-                </>
-              ) : (
-                <><td style={tdStyle}></td><td style={tdStyle}></td></>
-              )}
-            </tr>
-
-            {/* Row 4: ABS | SPECIAL AL. | Loan EMI (conditional) */}
-            <tr>
-              <td style={tdStyle}>{data.days_a ? `ABS: ${data.days_a}` : ""}</td>
               <td style={tdStyle}>SPECIAL AL.</td>
               <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.spl_rate)}</td>
               <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.spl_amount)}</td>
+              <td style={tdStyle}>P. TAX</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.pt)}</td>
+            </tr>
+
+            {/* Row 4: ABS | C.C.A. (always) | Loan EMI (conditional) */}
+            <tr>
+              <td style={tdStyle}>{data.days_a ? `ABS: ${data.days_a}` : ""}</td>
+              <td style={tdStyle}>C.C.A.</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.cca_rate)}</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.cca_amount)}</td>
               {data.loan_emi > 0 ? (
                 <>
                   <td style={tdStyle}>Loan EMI</td>
@@ -240,16 +228,21 @@ function PayslipDocument({ data }: { data: PayslipData }) {
               )}
             </tr>
 
-            {/* LEAVE TRAV — conditional */}
-            {data.lt_rate > 0 && (
-              <tr>
-                <td style={tdStyle}></td>
-                <td style={tdStyle}>LEAVE TRAV</td>
-                <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.lt_rate)}</td>
-                <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.lt_amount)}</td>
-                <td style={tdStyle}></td><td style={tdStyle}></td>
-              </tr>
-            )}
+            {/* Row 5: LEAVE TRAV (always) | LD (conditional) */}
+            <tr>
+              <td style={tdStyle}></td>
+              <td style={tdStyle}>LEAVE TRAV</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.lt_rate)}</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.lt_amount)}</td>
+              {data.ld > 0 ? (
+                <>
+                  <td style={tdStyle}>LD (Late Deduction)</td>
+                  <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.ld)}</td>
+                </>
+              ) : (
+                <><td style={tdStyle}></td><td style={tdStyle}></td></>
+              )}
+            </tr>
 
             {/* OTHER ALL. — conditional */}
             {data.other_allowance > 0 && (
@@ -271,14 +264,18 @@ function PayslipDocument({ data }: { data: PayslipData }) {
               <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.total_deduction)}</td>
             </tr>
 
-            {/* Footer row 2: Gross Rate / Net Pay */}
+            {/* Footer row 2: GROSS (full monthly rate) */}
+            <tr style={{ background: "#ccc", fontWeight: "bold" }}>
+              <td style={tdStyle} colSpan={3}>GROSS (Rate)</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.gross_rate)}</td>
+              <td style={tdStyle}></td><td style={tdStyle}></td>
+            </tr>
+
+            {/* Footer row 3: NET PAY (take-home) */}
             <tr style={{ background: "#b0b0b0", fontWeight: "bold", fontSize: 10 }}>
-              <td style={tdStyle} colSpan={3} className="text-center">
-                Gr. Rate: ₹{fmt(data.gross_rate)}
-              </td>
-              <td style={{ ...tdStyle, textAlign: "right" }} colSpan={3}>
-                NET PAY: ₹{fmt(data.net_pay)}
-              </td>
+              <td style={tdStyle} colSpan={3}>NET PAY</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>₹{fmt(data.net_pay)}</td>
+              <td style={tdStyle}></td><td style={tdStyle}></td>
             </tr>
           </tbody>
         </table>
@@ -288,32 +285,53 @@ function PayslipDocument({ data }: { data: PayslipData }) {
           <strong>INR in Words:</strong> {data.amount_in_words}
         </div>
 
-        {/* ── Bottom bar ── */}
+        {/* ── Leave balance (TB / ULB / ALB × CL | SL | PL) ── */}
+        <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 5, fontSize: 8.5 }}>
+          <tbody>
+            <tr>
+              <th style={{ ...thStyle, textAlign: "left", width: "25%" }}>Leave Balance</th>
+              <th style={{ ...thStyle, ...amtStyle }}>CL</th>
+              <th style={{ ...thStyle, ...amtStyle }}>SL</th>
+              <th style={{ ...thStyle, ...amtStyle }}>PL</th>
+            </tr>
+            <tr>
+              <td style={tdStyle}>TB (Total)</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{Math.floor(data.leave.cl.tb)}</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{Math.floor(data.leave.sl.tb)}</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{Math.floor(data.leave.pl.tb)}</td>
+            </tr>
+            <tr>
+              <td style={tdStyle}>ULB (Used)</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{Math.floor(data.leave.cl.ulb)}</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{Math.floor(data.leave.sl.ulb)}</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{Math.floor(data.leave.pl.ulb)}</td>
+            </tr>
+            <tr>
+              <td style={tdStyle}>ALB (Available)</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{Math.floor(data.leave.cl.alb)}</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{Math.floor(data.leave.sl.alb)}</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{Math.floor(data.leave.pl.alb)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* ── Bottom bar: Payment / Bank ── */}
         <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 4, fontSize: 8.5 }}>
           <tbody>
             <tr>
-              <td style={{ ...btmCellStyle, width: "45%" }}>
-                <strong>Leave Balance:</strong>{" "}
-                {leaveEntries.length > 0
-                  ? leaveEntries.map(([lt, bal]) => `${lt}: ${Math.floor(bal)}`).join("  ")
-                  : "—"}
-              </td>
-              <td style={{ ...btmCellStyle, width: "25%", textAlign: "center" }}>
+              <td style={{ ...btmCellStyle, width: "50%" }}>
                 <strong>Payment By:</strong> BANK
               </td>
-              <td style={{ ...btmCellStyle, width: "30%", textAlign: "right" }}>
+              <td style={{ ...btmCellStyle, width: "50%", textAlign: "right" }}>
                 <strong>Bank A/c No:</strong> {data.bank_acc_masked ?? "—"}
               </td>
             </tr>
           </tbody>
         </table>
 
-        {/* ── Disclaimer + Signatory ── */}
+        {/* ── Disclaimer ── */}
         <div style={{ fontSize: 7.5, color: "#555", marginTop: 8, borderTop: "1px dashed #bbb", paddingTop: 4 }}>
           This is a computer-generated payslip and does not require a physical signature.
-        </div>
-        <div style={{ textAlign: "right", marginTop: 20, fontSize: 9, fontWeight: "bold" }}>
-          Authorised Signatory
         </div>
       </div>
     </div>

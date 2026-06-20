@@ -78,6 +78,20 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
     )
     leave_balances = {lb.leave_type: float(lb.balance or 0) for lb in lb_rows}
 
+    # Structured CL/SL/PL leave block — TB (entitlement) / ULB (used) / ALB (balance).
+    # Missing buckets default to 0/0/0.
+    _lb_by_type = {lb.leave_type: lb for lb in lb_rows}
+
+    def _leave_bucket(lt: str) -> dict[str, float]:
+        lb = _lb_by_type.get(lt)
+        return {
+            "tb":  float(lb.entitlement or 0) if lb else 0.0,
+            "ulb": float(lb.used or 0) if lb else 0.0,
+            "alb": float(lb.balance or 0) if lb else 0.0,
+        }
+
+    leave = {"cl": _leave_bucket("CL"), "sl": _leave_bucket("SL"), "pl": _leave_bucket("PL")}
+
     # Effective-from of the salary structure that applied during this period.
     struct = get_structure_for_period(db, pm.emp_code, pm.year, pm.month)
     eff = struct.effective_from if struct else None
@@ -157,6 +171,7 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         "esic_ern":        int(float(pm.esic_ern or 0)),
         "pt":              pt_val,
         "loan_emi":        loan_val,
+        "ld":              0,   # Late Deduction — wired in 15.4; 0 for now
         "other_deduction": oth_ded,
         "total_deduction": total_ded,
         "net_pay":         net_pay_display,
@@ -186,6 +201,7 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         "uan_no":          emp.uan if emp else None,
         "esi_no":          emp.esic_no if emp else None,
         "leave_balances":  leave_balances,
+        "leave":           leave,   # {cl,sl,pl} each {tb,ulb,alb}
         "salary_effective_from": salary_effective_from,
         "salary_effective_from_display": salary_effective_from_display,
         # derived

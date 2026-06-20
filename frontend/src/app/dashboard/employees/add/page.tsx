@@ -34,8 +34,8 @@ type FormState = {
   designation: string; division: string; grade_id: string;
   shift_id: string; reporting_mgr_code: string;
   // Salary
-  basic: string; hra: string; spl: string; cca: string;
-  ctc_annual: string; pf_applicable: boolean; pt_applicable: boolean;
+  basic: string; hra: string; spl: string; cca: string; leave_travel: string;
+  ctc_annual: string;
   // Statutory
   pan: string; aadhaar: string; uan: string; esic_no: string;
   bank_name: string; bank_acc: string; ifsc: string; bank_branch: string;
@@ -50,8 +50,7 @@ const EMPTY: FormState = {
   gender: "", father_name: "", marital_status: "", blood_group: "", religion: "",
   entity_id: "", location_id: "", department_id: "", designation: "", division: "",
   grade_id: "", shift_id: "", reporting_mgr_code: "",
-  basic: "", hra: "", spl: "", cca: "", ctc_annual: "",
-  pf_applicable: true, pt_applicable: true,
+  basic: "", hra: "", spl: "", cca: "", leave_travel: "", ctc_annual: "",
   pan: "", aadhaar: "", uan: "", esic_no: "",
   bank_name: "", bank_acc: "", ifsc: "", bank_branch: "",
   present_addr: "", present_city: "", present_state: "", present_pin: "",
@@ -137,7 +136,7 @@ export default function AddEmployeePage() {
     setOpenSections((s) => ({ ...s, [k]: !s[k] }));
 
   // Gross calc
-  const gross = ["basic", "hra", "spl", "cca"].reduce((acc, k) => {
+  const gross = ["basic", "hra", "spl", "cca", "leave_travel"].reduce((acc, k) => {
     const v = parseFloat(form[k as keyof FormState] as string);
     return acc + (isNaN(v) ? 0 : v);
   }, 0);
@@ -162,7 +161,7 @@ export default function AddEmployeePage() {
         "bank_name", "bank_acc", "ifsc", "bank_branch",
         "present_addr", "present_city", "present_state", "present_pin",
         "perm_addr", "perm_city", "perm_state", "perm_pin", "status",
-        "ctc_annual", "basic", "hra", "spl", "cca",
+        "ctc_annual", "basic", "hra", "spl", "cca", "leave_travel",
       ];
       for (const f of strFields) {
         const v = form[f];
@@ -173,8 +172,6 @@ export default function AddEmployeePage() {
       if (form.grade_id) body.grade_id = parseInt(form.grade_id);
       if (form.shift_id) body.shift_id = parseInt(form.shift_id);
       // Booleans always included
-      body.pf_applicable = form.pf_applicable;
-      body.pt_applicable = form.pt_applicable;
 
       const result = await apiCreateEmployee(body);
       router.push(`/dashboard/employees/${result.emp_code}`);
@@ -335,14 +332,20 @@ export default function AddEmployeePage() {
         {/* ── Section 3: Salary ── */}
         <Section title="Salary" open={openSections.salary} onToggle={() => toggleSection("salary")}>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {(["basic", "hra", "spl", "cca"] as (keyof FormState)[]).map((field) => (
-              <Field key={field} label={field.toUpperCase()}>
+            {([
+              { key: "basic", label: "Basic" },
+              { key: "hra", label: "HRA" },
+              { key: "spl", label: "SPL" },
+              { key: "cca", label: "CCA" },
+              { key: "leave_travel", label: "LTA (Leave travel)" },
+            ] as { key: keyof FormState; label: string }[]).map(({ key, label }) => (
+              <Field key={key} label={label}>
                 <div className="relative">
                   <IndianRupee size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" />
                   <input
                     type="number" min="0" step="0.01"
-                    value={form[field] as string}
-                    onChange={(e) => set(field, e.target.value)}
+                    value={form[key] as string}
+                    onChange={(e) => set(key, e.target.value)}
                     placeholder="0.00"
                     className={`${INPUT} pl-7`}
                   />
@@ -371,27 +374,6 @@ export default function AddEmployeePage() {
             ) : null}
           </div>
 
-          {/* Statutory flags */}
-          <div className="mt-4 flex flex-wrap gap-4">
-            <label className="flex items-center gap-2.5 cursor-pointer select-none">
-              <div
-                onClick={() => set("pf_applicable", !form.pf_applicable)}
-                className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition ${form.pf_applicable ? "bg-[#E5202E] border-[#E5202E]" : "border-[#E2E2DF] bg-white"}`}
-              >
-                {form.pf_applicable && <span className="text-white text-[10px] font-bold">✓</span>}
-              </div>
-              <span className="text-sm text-[#1A1A1A]">PF applicable</span>
-            </label>
-            <label className="flex items-center gap-2.5 cursor-pointer select-none">
-              <div
-                onClick={() => set("pt_applicable", !form.pt_applicable)}
-                className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition ${form.pt_applicable ? "bg-[#E5202E] border-[#E5202E]" : "border-[#E2E2DF] bg-white"}`}
-              >
-                {form.pt_applicable && <span className="text-white text-[10px] font-bold">✓</span>}
-              </div>
-              <span className="text-sm text-[#1A1A1A]">PT applicable</span>
-            </label>
-          </div>
         </Section>
 
         {/* ── Section 4: Statutory & Banking ── */}
