@@ -13,7 +13,7 @@ from app.core.db import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.models.employee import AuditLog, AttendanceDaily, AttendanceRaw, Employee, PayrollMonth, User
 from app.services.import_service import parse_attendance_csv
-from app.services.payroll_engine import compute_payroll
+from app.services.payroll_engine import compute_payroll, process_payroll_month
 from app.services.period_calculator import get_working_days_info
 
 router = APIRouter()
@@ -343,6 +343,38 @@ def monthly_summary(
         )
         if entity_id != my_entity:
             raise HTTPException(status_code=403, detail="Access denied")
+
+    # Self-refresh non-locked months from attendance_daily so reflected leaves
+    # (approvals, 15.9) show in the summary without a manual reprocess — same
+    # pattern as the payslip /data endpoint. Locked months stay frozen. Employees
+    # with attendance in this period's 26→25 window but no payroll row yet are
+    # processed too (covers leaves routed across the 26th into the next period).
+    win_start, win_end = _attendance_window(year, month)
+    existing = (
+        db.query(PayrollMonth.emp_code, PayrollMonth.status)
+        .join(Employee, Employee.emp_code == PayrollMonth.emp_code)
+        .filter(Employee.entity_id == entity_id,
+                PayrollMonth.year == year, PayrollMonth.month == month)
+        .all()
+    )
+    locked = {c for c, s in existing if s == "locked"}
+    refresh = {c for c, s in existing if s != "locked"}
+    att_emps = (
+        db.query(AttendanceDaily.emp_code)
+        .join(Employee, Employee.emp_code == AttendanceDaily.emp_code)
+        .filter(Employee.entity_id == entity_id,
+                AttendanceDaily.att_date >= win_start, AttendanceDaily.att_date <= win_end)
+        .distinct()
+        .all()
+    )
+    for (c,) in att_emps:
+        if c not in locked:
+            refresh.add(c)
+    for c in refresh:
+        try:
+            process_payroll_month(c, year, month, db, generated_by=current_user.emp_code)
+        except Exception:  # noqa: BLE001 — a bad row must not break the whole view
+            db.rollback()
 
     rows = (
         db.query(PayrollMonth, Employee.name)
