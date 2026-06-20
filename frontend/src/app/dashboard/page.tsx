@@ -414,7 +414,7 @@ const LEAVE_STATUS_META: Record<string, { label: string; color: string; bg: stri
 };
 
 const LEAVE_TYPE_COLOR: Record<string, string> = {
-  CL: "#E5202E", SL: "#D97706", PL: "#2563EB", EL: "#2563EB",
+  CL: "#E5202E", SL: "#D97706", PL: "#2563EB",
 };
 
 function fmtLeaveDate(iso: string) {

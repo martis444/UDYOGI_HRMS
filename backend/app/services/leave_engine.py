@@ -1,27 +1,38 @@
 """
-Leave accrual engine.
+Leave engine — flat annual grant model (Session 15.3).
 
-Workers (category='worker') never accrue leaves.
-Staff on probation (is_on_probation=True) never accrue.
-Probation ends automatically when present_days >= probation_days.
+Leave is CL / SL / PL only (EL retired in migration 010). There is no monthly
+accrual and no probation gate on leave: an employee simply has no leave balance
+until their first DOJ anniversary (doj + 1 year), at which point a flat annual
+quota is granted. On every later anniversary the unused balance is carried
+forward and the fresh quota added on top, with `used` reset to 0.
+
+  ANNUAL_LEAVE = {CL: 10, SL: 7, PL: 14}   (config.settings.ANNUAL_LEAVE)
+
+Probation (3 months default, 6 max) is kept purely for confirmation — it no
+longer starts or gates leave.
+
+Workers (category='worker') never get leave.
 """
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.employee import (
     AttendanceDaily, AuditLog, Employee, LeaveAccrualLog, LeaveBalance,
 )
 
-_MONTHLY_TAG_PREFIX = "MONTHLY_ACCRUAL:"
+# leave_type (CL/SL/PL) -> attendance_daily.att_status code (paid, not LOP).
+_LEAVE_TO_ATT = {"CL": "cl", "SL": "sl", "PL": "pl"}
 
 
 def check_and_end_probation(emp_code: str, db: Session) -> bool:
     """
-    Count present days; if >= probation_days, close probation.
-    Returns True if probation just ended.
+    Count present days; if >= probation_days, close probation. Confirmation only —
+    no longer coupled to leave. Returns True if probation just ended.
     """
     emp = db.query(Employee).filter(Employee.emp_code == emp_code).first()
     if not emp or not emp.is_on_probation:
@@ -31,7 +42,7 @@ def check_and_end_probation(emp_code: str, db: Session) -> bool:
         db.query(AttendanceDaily)
         .filter(
             AttendanceDaily.emp_code == emp_code,
-            AttendanceDaily.att_status.in_(["P"]),
+            AttendanceDaily.att_status == "present",
         )
         .count()
     )
@@ -54,37 +65,6 @@ def check_and_end_probation(emp_code: str, db: Session) -> bool:
         db.flush()
         return True
     return False
-
-
-def get_months_since_probation(emp_code: str, db: Session) -> int:
-    """Return full calendar months elapsed since probation_end_date. 0 if still on probation."""
-    emp = db.query(Employee).filter(Employee.emp_code == emp_code).first()
-    if not emp or emp.is_on_probation or not emp.probation_end_date:
-        return 0
-    today = date.today()
-    end = emp.probation_end_date
-    months = (today.year - end.year) * 12 + (today.month - end.month)
-    return max(0, months)
-
-
-def calculate_monthly_cl_sl(months_since_probation: int) -> tuple:
-    """
-    Returns (cl_credit, sl_credit) for the Nth month since probation end.
-
-    Months 1-9  — alternating 2/1 CL, steady 1 SL:
-      odd months  → 2 CL, 1 SL
-      even months → 1 CL, 1 SL
-    Months 10+  — 3 CL, 1 SL every month
-    """
-    if months_since_probation <= 0:
-        return (0.0, 0.0)
-    if months_since_probation <= 9:
-        cl = 2.0 if months_since_probation % 2 == 1 else 1.0
-        sl = 1.0
-    else:
-        cl = 3.0
-        sl = 1.0
-    return (cl, sl)
 
 
 def _get_or_create_balance(
@@ -117,93 +97,166 @@ def _get_or_create_balance(
     return lb
 
 
-def run_monthly_accrual(emp_code: str, month: int, year: int, db: Session) -> str:
-    """
-    Credit leave for one employee for the given month/year.
-    Idempotent — safe to call multiple times.
+# ---------------------------------------------------------------------------
+# Flat annual grant
+# ---------------------------------------------------------------------------
 
-    Returns one of: 'accrued' | 'skipped_worker' | 'skipped_probation' | 'already_processed'
+def grant_annual_leave(emp_code: str, as_of_date: date, db: Session) -> str:
+    """
+    Grant the flat annual leave quota for an employee, if a DOJ anniversary has
+    been reached as of `as_of_date`. Idempotent per anniversary (year_index).
+
+    Returns one of:
+      'granted' | 'already_granted' | 'skipped_worker'
+      | 'skipped_no_doj' | 'skipped_pre_anniversary'
+
     Caller is responsible for db.commit().
     """
     emp = db.query(Employee).filter(Employee.emp_code == emp_code).first()
     if not emp:
         raise HTTPException(status_code=404, detail=f"Employee {emp_code} not found")
 
-    # Rule 1: workers never get leaves
     if (emp.category or "staff") == "worker":
         return "skipped_worker"
+    if not emp.doj:
+        return "skipped_no_doj"
 
-    # Rule 2: auto-end probation if threshold reached, then re-check
-    check_and_end_probation(emp_code, db)
-    db.refresh(emp)
+    # year_index = completed years of service as of as_of_date. <1 → no balance yet.
+    year_index = (as_of_date - emp.doj).days // 365
+    if year_index < 1:
+        return "skipped_pre_anniversary"
 
-    if emp.is_on_probation:
-        return "skipped_probation"
-
-    # Idempotency: each month produces one accrual entry per leave_type tagged with MONTHLY_ACCRUAL:YYYY-MM
-    tag = f"{_MONTHLY_TAG_PREFIX}{year}-{month:02d}"
+    tag = f"ANNUAL_GRANT:{emp_code}:{year_index}"
     if (
         db.query(LeaveAccrualLog)
-        .filter(
-            LeaveAccrualLog.emp_code == emp_code,
-            LeaveAccrualLog.reason == tag,
-        )
+        .filter(LeaveAccrualLog.emp_code == emp_code, LeaveAccrualLog.reason == tag)
         .first()
     ):
-        return "already_processed"
+        return "already_granted"
 
-    # Determine which month number this is since probation ended (drives CL/SL pattern)
-    prior_cl_count = (
-        db.query(LeaveAccrualLog)
-        .filter(
-            LeaveAccrualLog.emp_code == emp_code,
-            LeaveAccrualLog.leave_type == "CL",
-            LeaveAccrualLog.reason.like(f"{_MONTHLY_TAG_PREFIX}%"),
-        )
-        .count()
-    )
-    months_since = prior_cl_count + 1
-    cl_credit, sl_credit = calculate_monthly_cl_sl(months_since)
+    store_year = as_of_date.year
+    granted: list[str] = []
 
-    # Rule 5: PL only after 1 full year of service from DOJ
-    today = date.today()
-    service_years = ((today - emp.doj).days // 365) if emp.doj else 0
-    pl_credit = round(14 / 12, 3) if service_years >= 1 else 0.0
+    for lt, quota in settings.ANNUAL_LEAVE.items():
+        # Carry forward the unused balance from the most recent prior leave-year.
+        carried = 0.0
+        if year_index > 1:
+            prior = (
+                db.query(LeaveBalance)
+                .filter(
+                    LeaveBalance.emp_code == emp_code,
+                    LeaveBalance.leave_type == lt,
+                    LeaveBalance.year < store_year,
+                )
+                .order_by(LeaveBalance.year.desc())
+                .first()
+            )
+            if prior:
+                carried = max(0.0, float(prior.entitlement or 0) - float(prior.used or 0))
 
-    credited: list[str] = []
+        lb = _get_or_create_balance(emp_code, lt, store_year, db)
+        lb.entitlement = carried + float(quota)
+        lb.used = 0
+        lb.carried_forward = carried
+        lb.accrued_ytd = float(quota)
 
-    for leave_type, amount in [("CL", cl_credit), ("SL", sl_credit), ("PL", pl_credit)]:
-        if amount <= 0:
-            continue
-        lb = _get_or_create_balance(emp_code, leave_type, year, db)
-        lb.entitlement = float(lb.entitlement or 0) + amount
-        lb.accrued_ytd = float(lb.accrued_ytd or 0) + amount
         db.add(LeaveAccrualLog(
             emp_code=emp_code,
-            leave_type=leave_type,
-            accrual_date=today,
-            days_credited=amount,
+            leave_type=lt,
+            accrual_date=as_of_date,
+            days_credited=float(quota),
             reason=tag,
         ))
-        credited.append(f"{leave_type}:{amount}")
+        granted.append(f"{lt}:{carried + float(quota)} (cf {carried})")
 
     db.add(AuditLog(
         user_code="SYSTEM",
-        action="LEAVE_ACCRUAL",
+        action="ANNUAL_GRANT",
         table_name="leave_balances",
         record_id=emp_code,
-        new_values={"month": month, "year": year, "credited": credited},
+        new_values={"year_index": year_index, "store_year": store_year, "granted": granted},
     ))
+    return "granted"
 
-    return "accrued"
+
+def run_grants(as_of_date: date, db: Session, entity_id: str | None = None) -> dict:
+    """Batch grant over all active employees past their first anniversary."""
+    q = db.query(Employee).filter(Employee.status == "active")
+    if entity_id:
+        q = q.filter(Employee.entity_id == entity_id)
+
+    counters = {
+        "granted": 0, "already_granted": 0, "skipped_worker": 0,
+        "skipped_no_doj": 0, "skipped_pre_anniversary": 0,
+    }
+    errors: list[dict] = []
+    for emp in q.all():
+        try:
+            result = grant_annual_leave(emp.emp_code, as_of_date, db)
+            db.flush()
+            counters[result] = counters.get(result, 0) + 1
+        except HTTPException as exc:
+            errors.append({"emp_code": emp.emp_code, "error": exc.detail})
+        except Exception as exc:  # noqa: BLE001
+            errors.append({"emp_code": emp.emp_code, "error": str(exc)})
+
+    return {**counters, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# Leave -> attendance reflection (authoritative paid-day write)
+# ---------------------------------------------------------------------------
+
+def reflect_leave_on_attendance(req, db: Session) -> int:
+    """
+    Write every working day of an approved leave into attendance_daily with the
+    leave's att_status (cl/sl/pl) so the payroll engine counts it as PAID, not LOP.
+
+    The payroll engine attributes attendance to a pay period by the 26th cutoff
+    (CYCLE_CUTOFF_DAY), so a leave day on/after the 26th naturally lands in the
+    next month's payroll run, and a span across the 26th splits across two runs —
+    no period maths needed here, just write the real calendar dates.
+
+    Idempotent per (emp_code, att_date): re-running upserts the same rows.
+    Sundays are left as weekly-off (not overwritten). Returns days written.
+    """
+    status = _LEAVE_TO_ATT.get(req.leave_type)
+    if status is None:
+        return 0
+    emp = db.query(Employee).filter(Employee.emp_code == req.emp_code).first()
+
+    written = 0
+    d = req.from_date
+    while d <= req.to_date:
+        if d.weekday() != 6:  # 6 = Sunday (weekly off)
+            existing = (
+                db.query(AttendanceDaily)
+                .filter(AttendanceDaily.emp_code == req.emp_code, AttendanceDaily.att_date == d)
+                .first()
+            )
+            if existing:
+                existing.att_status = status
+                existing.source = "leave"
+            else:
+                db.add(AttendanceDaily(
+                    emp_code=req.emp_code,
+                    att_date=d,
+                    att_status=status,
+                    source="leave",
+                    location_id=emp.location_id if emp else None,
+                    shift_id=emp.shift_id if emp else None,
+                ))
+            written += 1
+        d += timedelta(days=1)
+    db.flush()
+    return written
 
 
 def encash_pl(emp_code: str, days: float, db: Session) -> dict:
     """
-    Encash PL days for an employee.
-    Eligibility: PL balance >= 28. daily_rate = basic / 26.
-    Deducts from entitlement (reduces DB-generated balance) and updates encashed_ytd.
-    Caller should NOT have an open transaction; this function commits.
+    Encash PL days for an employee. Eligibility: PL balance >= 28. daily_rate =
+    basic / 26. Deducts from entitlement (reduces DB-generated balance) and
+    updates encashed_ytd. Commits.
     """
     if days < 1:
         raise HTTPException(status_code=400, detail="Minimum 1 day for encashment")
@@ -212,22 +265,16 @@ def encash_pl(emp_code: str, days: float, db: Session) -> dict:
     if not emp:
         raise HTTPException(status_code=404, detail=f"Employee {emp_code} not found")
 
-    # Find most recent PL balance row (supports multi-year carry-forward)
     lb = (
         db.query(LeaveBalance)
-        .filter(
-            LeaveBalance.emp_code == emp_code,
-            LeaveBalance.leave_type == "PL",
-        )
+        .filter(LeaveBalance.emp_code == emp_code, LeaveBalance.leave_type == "PL")
         .order_by(LeaveBalance.year.desc())
         .first()
     )
     if not lb:
         raise HTTPException(status_code=400, detail="No PL balance found")
 
-    # available = DB-generated balance (entitlement - used)
     available = float(lb.entitlement or 0) - float(lb.used or 0)
-
     if available < 28:
         raise HTTPException(
             status_code=400,
@@ -243,7 +290,6 @@ def encash_pl(emp_code: str, days: float, db: Session) -> dict:
     encashment_amount = round(daily_rate * days, 2)
     remaining_balance = available - days
 
-    # Deduct from entitlement so DB-generated balance reflects encashment
     lb.entitlement = float(lb.entitlement or 0) - days
     lb.encashed_ytd = float(lb.encashed_ytd or 0) + days
 

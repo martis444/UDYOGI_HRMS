@@ -8,14 +8,13 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.models.employee import AuditLog, Employee, LeaveAccrualLog, LeaveBalance, LeaveRequest, PayrollMonth, User
-from app.services.leave_engine import encash_pl, run_monthly_accrual
+from app.services.leave_engine import encash_pl, reflect_leave_on_attendance, run_grants
 
 router = APIRouter()
 
 
-class MonthlyAccrualBody(BaseModel):
-    month: int
-    year: int
+class AnnualGrantBody(BaseModel):
+    as_of_date: Optional[date] = None   # defaults to today
     entity_id: Optional[str] = None
 
 
@@ -28,80 +27,43 @@ class EncashPLBody(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# POST /run-monthly-accrual
+# POST /run-annual-grants  — flat annual leave grant (replaces monthly accrual)
 # ---------------------------------------------------------------------------
 
-@router.post("/run-monthly-accrual")
-def run_monthly_accrual_batch(
-    body: MonthlyAccrualBody,
+@router.post("/run-annual-grants")
+def run_annual_grants_batch(
+    body: AnnualGrantBody = Body(default=AnnualGrantBody()),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("super_admin", "entity_admin")),
 ):
-    """Run monthly leave accrual for all active staff employees (optionally filtered by entity)."""
-    q = db.query(Employee).filter(Employee.status == "active")
+    """Grant the flat annual leave quota to every active employee who has reached a
+    DOJ anniversary as of `as_of_date` (defaults to today). Idempotent per anniversary."""
+    as_of = body.as_of_date or date.today()
 
-    if body.entity_id:
-        if current_user.role != "super_admin":
-            my_entity = (
-                db.query(Employee.entity_id)
-                .filter(Employee.emp_code == current_user.emp_code)
-                .scalar()
-            )
-            if body.entity_id != my_entity:
-                raise HTTPException(status_code=403, detail="Access denied")
-        q = q.filter(Employee.entity_id == body.entity_id)
-    elif current_user.role != "super_admin":
+    # Entity scope: non-super_admin is forced to their own entity.
+    entity_id = body.entity_id
+    if current_user.role != "super_admin":
         my_entity = (
             db.query(Employee.entity_id)
             .filter(Employee.emp_code == current_user.emp_code)
             .scalar()
         )
-        q = q.filter(Employee.entity_id == my_entity)
+        if entity_id and entity_id != my_entity:
+            raise HTTPException(status_code=403, detail="Access denied")
+        entity_id = my_entity
 
-    employees = q.all()
-    processed = skipped_probation = skipped_worker = already_processed = 0
-    errors: list[dict] = []
-
-    for emp in employees:
-        try:
-            result = run_monthly_accrual(emp.emp_code, body.month, body.year, db)
-            db.flush()
-            if result == "accrued":
-                processed += 1
-            elif result == "skipped_probation":
-                skipped_probation += 1
-            elif result == "skipped_worker":
-                skipped_worker += 1
-            elif result == "already_processed":
-                already_processed += 1
-        except HTTPException as exc:
-            errors.append({"emp_code": emp.emp_code, "error": exc.detail})
-        except Exception as exc:
-            errors.append({"emp_code": emp.emp_code, "error": str(exc)})
+    result = run_grants(as_of, db, entity_id=entity_id)
 
     db.add(AuditLog(
         user_code=current_user.emp_code,
-        action="LEAVE_ACCRUAL_BATCH",
+        action="LEAVE_GRANT_BATCH",
         table_name="leave_balances",
         record_id="BATCH",
-        new_values={
-            "month": body.month,
-            "year": body.year,
-            "entity_id": body.entity_id,
-            "processed": processed,
-            "skipped_probation": skipped_probation,
-            "skipped_worker": skipped_worker,
-        },
+        new_values={"as_of_date": as_of.isoformat(), "entity_id": entity_id, **{k: v for k, v in result.items() if k != "errors"}},
     ))
     db.commit()
 
-    return {
-        "processed": processed,
-        "skipped_probation": skipped_probation,
-        "skipped_worker": skipped_worker,
-        "already_processed": already_processed,
-        "errors": errors,
-    }
+    return {"as_of_date": as_of.isoformat(), **result}
 
 
 # ---------------------------------------------------------------------------
@@ -203,24 +165,30 @@ def get_leave_balance(
         .all()
     )
 
+    # Most-recent row per bucket → TB (entitlement) / ULB (used) / ALB (balance).
+    latest: dict = {}
+    for lb in rows:  # rows are year-desc, so first seen per type is the latest
+        if lb.leave_type not in latest:
+            latest[lb.leave_type] = lb
+
     result: dict = {}
-    for lb in rows:
-        lt = lb.leave_type
-        if lt not in result:
-            result[lt] = {
-                "year": lb.year,
-                "entitlement": float(lb.entitlement or 0),
-                "used": float(lb.used or 0),
-                "balance": float(lb.balance or 0),
-                "carried_forward": float(lb.carried_forward or 0),
-                "accrued_ytd": float(lb.accrued_ytd or 0),
-                "taken_ytd": float(lb.taken_ytd or 0),
-                "encashed_ytd": float(lb.encashed_ytd or 0),
-            }
+    for lt in ("CL", "SL", "PL"):
+        lb = latest.get(lt)
+        tb  = float(lb.entitlement or 0) if lb else 0.0
+        ulb = float(lb.used or 0) if lb else 0.0
+        alb = float(lb.balance or 0) if lb else 0.0
+        result[lt] = {
+            "tb": tb, "ulb": ulb, "alb": alb,
+            # aliases (back-compat with existing consumers)
+            "entitlement": tb, "used": ulb, "balance": alb,
+            "year": lb.year if lb else None,
+            "carried_forward": float(lb.carried_forward or 0) if lb else 0.0,
+            "encashed_ytd": float(lb.encashed_ytd or 0) if lb else 0.0,
+        }
 
     # Compute daily rate and cash value of saved PL (basic / 26 per day)
     daily_rate = round(float(emp.basic or 0) / 26, 2)
-    pl_balance = result.get("PL", {}).get("balance", 0.0)
+    pl_balance = result["PL"]["alb"]
     pl_cash_value = round(daily_rate * pl_balance, 2)
 
     # Service years (PL only credits after 1 year)
@@ -314,7 +282,7 @@ def get_leave_streak(
             float(row.days_cl or 0)
             + float(row.days_sl or 0)
             + float(row.days_lwp or 0)
-            + float(row.days_el or 0)
+            + float(row.days_pl or 0)
         )
         if total_leave == 0:
             streak_months += 1
@@ -569,12 +537,17 @@ def approve_leave(
     req.approved_by = current_user.emp_code
     req.approved_at = datetime.now(timezone.utc)
 
+    # Reflect the leave onto the attendance sheet (paid days; 26th-cycle routing
+    # is handled by the payroll engine's attendance window).
+    days_written = reflect_leave_on_attendance(req, db)
+
     db.add(AuditLog(
         user_code=current_user.emp_code,
         action="LEAVE_APPROVE",
         table_name="leave_requests",
         record_id=str(req.id),
-        new_values={"emp_code": req.emp_code, "leave_type": req.leave_type, "days": float(req.days)},
+        new_values={"emp_code": req.emp_code, "leave_type": req.leave_type,
+                    "days": float(req.days), "attendance_days_written": days_written},
     ))
     db.commit()
     return {"message": "Approved", "id": request_id}
@@ -711,7 +684,7 @@ def leave_tracker(
         s = 0
         for pm in pms:
             if (float(pm.days_cl or 0) + float(pm.days_sl or 0)
-                    + float(pm.days_lwp or 0) + float(pm.days_el or 0)) == 0:
+                    + float(pm.days_lwp or 0) + float(pm.days_pl or 0)) == 0:
                 s += 1
             else:
                 break
@@ -817,8 +790,8 @@ def create_leave_request(
     if current_user.role == "employee" and body.emp_code != current_user.emp_code:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    if body.leave_type not in ("CL", "SL", "EL", "PL"):
-        raise HTTPException(status_code=400, detail="leave_type must be CL, SL, EL, or PL")
+    if body.leave_type not in ("CL", "SL", "PL"):
+        raise HTTPException(status_code=400, detail="leave_type must be CL, SL, or PL")
     if body.from_date > body.to_date:
         raise HTTPException(status_code=400, detail="from_date must be on or before to_date")
 
@@ -988,6 +961,21 @@ def approve_leave_request(
     if req.emp_code == current_user.emp_code:
         raise HTTPException(status_code=400, detail="Cannot approve your own leave request")
 
+    # Debit the leave balance (single source of truth = approval point, 15.3).
+    lb = (
+        db.query(LeaveBalance)
+        .filter(
+            LeaveBalance.emp_code == req.emp_code,
+            LeaveBalance.leave_type == req.leave_type,
+            LeaveBalance.year == req.from_date.year,
+        )
+        .first()
+    )
+    if not lb:
+        raise HTTPException(status_code=400, detail="Leave balance record not found")
+    lb.taken_ytd = float(lb.taken_ytd or 0) + float(req.days)
+    lb.used = float(lb.used or 0) + float(req.days)
+
     now = datetime.now(timezone.utc)
     req.status      = "approved"
     req.actioned_by = current_user.emp_code
@@ -996,12 +984,17 @@ def approve_leave_request(
     req.approved_by = current_user.emp_code
     req.approved_at = now
 
+    # Reflect leave onto the attendance sheet as paid days (26th-cycle routing
+    # handled by the payroll engine's attendance window).
+    days_written = reflect_leave_on_attendance(req, db)
+
     db.add(AuditLog(
         user_code  = current_user.emp_code,
         action     = "UPDATE",
         table_name = "leave_requests",
         record_id  = str(request_id),
-        new_values = {"status": "approved", "actioned_by": current_user.emp_code},
+        new_values = {"status": "approved", "actioned_by": current_user.emp_code,
+                      "attendance_days_written": days_written},
     ))
     db.commit()
     return {"status": "approved", "id": request_id}
