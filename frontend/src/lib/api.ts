@@ -324,6 +324,24 @@ export async function apiUnlockPayroll(
   return data;
 }
 
+export interface LateOverrideResult {
+  emp_code: string;
+  year: number;
+  month: number;
+  absent_from_late: number;
+  ld: number;
+  ld_overridden: boolean;
+  late_absent_overridden: boolean;
+}
+
+// Admin override of late-absent days and/or LD on an UNLOCKED month (15.4).
+export async function apiLateOverride(
+  body: { emp_code: string; year: number; month: number; absent_from_late?: number; ld?: number; reason: string },
+): Promise<LateOverrideResult> {
+  const { data } = await api.post("/api/payroll/late-override", body);
+  return data;
+}
+
 // ─── Payslip ─────────────────────────────────────────────────────────────────
 
 export async function apiGetPayslip(emp_code: string, year: number, month: number) {
@@ -525,13 +543,15 @@ export async function apiDownloadPayslipPdf(emp_code: string, year: number, mont
 // ─── Leave ────────────────────────────────────────────────────────────────────
 
 export interface LeaveBalanceEntry {
-  year: number;
+  year: number | null;
+  // TB / ULB / ALB (15.3) with back-compat aliases
+  tb: number;
+  ulb: number;
+  alb: number;
   entitlement: number;
   used: number;
   balance: number;
   carried_forward: number;
-  accrued_ytd: number;
-  taken_ytd: number;
   encashed_ytd: number;
 }
 

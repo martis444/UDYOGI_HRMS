@@ -4,9 +4,9 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import GlassCard from "@/components/ui/GlassCard";
 import { Skeleton, SkeletonRows } from "@/components/ui/Skeleton";
 import { useAuth, isAdminRole } from "@/lib/auth";
-import { apiGetPayslip, apiDownloadPayslipPdf, apiGetEmployees } from "@/lib/api";
+import { apiGetPayslip, apiDownloadPayslipPdf, apiGetEmployees, apiLateOverride } from "@/lib/api";
 import { APP_META } from "@/lib/appMeta";
-import { FileText, Download, Printer, Search } from "lucide-react";
+import { FileText, Download, Printer, Search, Clock, Pencil, X, Loader2 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,10 +56,12 @@ interface PayslipData {
   days_a: number | null;
   days_wo: number | null;
   days_cl: number | null;
-  days_el: number | null;
+  days_pl: number | null;
   days_sl: number | null;
   days_h: number | null;
   days_lwp: number | null;
+  late_days: number;
+  absent_from_late: number;
   ot_hours: number;
   status: string;
   // employee / entity
@@ -285,6 +287,14 @@ function PayslipDocument({ data }: { data: PayslipData }) {
           <strong>INR in Words:</strong> {data.amount_in_words}
         </div>
 
+        {/* ── Late note (why LD) ── */}
+        {data.late_days > 0 && (
+          <div style={{ fontSize: 7.5, color: "#555", marginBottom: 5 }}>
+            Late days: {data.late_days} → {data.absent_from_late} absent-equivalent
+            {data.absent_from_late === 1 ? "" : "s"} (every 3 late = 1 day; covered by leave first, remainder charged as LD).
+          </div>
+        )}
+
         {/* ── Leave balance (TB / ULB / ALB × CL | SL | PL) ── */}
         <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 5, fontSize: 8.5 }}>
           <tbody>
@@ -374,6 +384,14 @@ export default function PayslipPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
+  // Late / LD override (admin, unlocked months)
+  const [ovOpen, setOvOpen] = useState(false);
+  const [ovAbsent, setOvAbsent] = useState("");
+  const [ovLd, setOvLd] = useState("");
+  const [ovReason, setOvReason] = useState("");
+  const [ovSaving, setOvSaving] = useState(false);
+  const [ovError, setOvError] = useState("");
+
   const isAdmin = isAdminRole(user);
 
   // Determine which emp_code to load
@@ -435,6 +453,36 @@ export default function PayslipPage() {
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const openOverride = () => {
+    if (!payslip) return;
+    setOvAbsent(String(payslip.absent_from_late ?? 0));
+    setOvLd(String(payslip.ld ?? 0));
+    setOvReason("");
+    setOvError("");
+    setOvOpen(true);
+  };
+
+  const submitOverride = async () => {
+    if (!targetEmp) return;
+    if (ovReason.trim().length < 4) { setOvError("A reason of at least 4 characters is required."); return; }
+    setOvSaving(true);
+    setOvError("");
+    try {
+      await apiLateOverride({
+        emp_code: targetEmp, year: selYear, month: selMonth,
+        absent_from_late: ovAbsent === "" ? undefined : Number(ovAbsent),
+        ld: ovLd === "" ? undefined : Number(ovLd),
+        reason: ovReason.trim(),
+      });
+      setOvOpen(false);
+      await fetchPayslip();
+    } catch (e: unknown) {
+      setOvError((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Override failed");
+    } finally {
+      setOvSaving(false);
+    }
   };
 
   if (!user) return null;
@@ -627,6 +675,35 @@ export default function PayslipPage() {
               </GlassCard>
             </div>
 
+            {/* Admin: late / LD override (unlocked months only) */}
+            {isAdmin && (
+              <GlassCard className="p-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-[#D97706]/10 flex items-center justify-center shrink-0">
+                      <Clock size={14} className="text-[#D97706]" />
+                    </div>
+                    <div className="text-sm">
+                      <p className="text-[#1A1A1A] font-semibold">Late &amp; LD</p>
+                      <p className="text-[#5A5A5A] text-xs">
+                        Late {payslip.late_days} · absent-equiv {payslip.absent_from_late} · LD ₹{fmt(payslip.ld)}
+                      </p>
+                    </div>
+                  </div>
+                  {payslip.status === "locked" ? (
+                    <span className="text-[11px] text-[#5A5A5A]">Locked — frozen</span>
+                  ) : (
+                    <button
+                      onClick={openOverride}
+                      className="flex items-center gap-1.5 px-3 py-2 text-xs bg-white border border-[#E2E2DF] text-[#1A1A1A] hover:bg-[#F4F4F2] rounded-lg transition font-medium press"
+                    >
+                      <Pencil size={13} /> Edit
+                    </button>
+                  )}
+                </div>
+              </GlassCard>
+            )}
+
             {/* Payslip document */}
             <div className="overflow-x-auto">
               <PayslipDocument data={payslip} />
@@ -639,6 +716,51 @@ export default function PayslipPage() {
           © {new Date().getFullYear()} {APP_META.copyrightHolder}
         </p>
       </div>
+
+      {/* Late / LD override modal */}
+      {ovOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#E2E2DF]">
+            <div className="px-5 py-4 border-b border-[#E2E2DF] flex items-center justify-between">
+              <h3 className="text-[#1A1A1A] font-semibold text-base flex items-center gap-2">
+                <Clock size={16} className="text-[#D97706]" /> Override late / LD
+              </h3>
+              <button onClick={() => setOvOpen(false)} className="text-[#6B6B6B] hover:text-[#1A1A1A] transition"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-[#5A5A5A]">
+                {MONTH_NAMES[selMonth - 1]} {selYear} · edits apply only before the month is locked.
+                Changing absent-equivalent days reconciles leave coverage; leave the LD blank to auto-compute.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-semibold text-[#5A5A5A] mb-1.5 block">Absent-equivalent days</span>
+                  <input type="number" min="0" step="0.5" value={ovAbsent} onChange={(e) => setOvAbsent(e.target.value)}
+                    className="w-full bg-white border border-[#E2E2DF] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E5202E] focus:ring-1 focus:ring-[#E5202E]/30" />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-[#5A5A5A] mb-1.5 block">LD amount (₹)</span>
+                  <input type="number" min="0" step="0.01" value={ovLd} onChange={(e) => setOvLd(e.target.value)}
+                    className="w-full bg-white border border-[#E2E2DF] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E5202E] focus:ring-1 focus:ring-[#E5202E]/30" />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-xs font-semibold text-[#5A5A5A] mb-1.5 block">Reason <span className="text-[#E5202E]">*</span></span>
+                <input value={ovReason} onChange={(e) => setOvReason(e.target.value)} placeholder="At least 4 characters"
+                  className="w-full bg-white border border-[#E2E2DF] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#6B6B6B] focus:outline-none focus:border-[#E5202E] focus:ring-1 focus:ring-[#E5202E]/30" />
+              </label>
+              {ovError && <p className="text-xs text-[#DC2626]">{ovError}</p>}
+            </div>
+            <div className="px-5 py-4 border-t border-[#E2E2DF] flex items-center justify-end gap-2">
+              <button onClick={() => setOvOpen(false)} className="px-4 py-2.5 text-sm bg-white border border-[#E2E2DF] text-[#5A5A5A] hover:bg-[#F4F4F2] rounded-xl transition font-medium">Cancel</button>
+              <button onClick={submitOverride} disabled={ovSaving}
+                className="flex items-center gap-2 px-6 py-2.5 text-sm bg-[#E5202E] text-white hover:bg-[#C81824] rounded-xl transition font-semibold disabled:opacity-60">
+                {ovSaving ? <><Loader2 size={13} className="animate-spin" /> Saving…</> : "Save override"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

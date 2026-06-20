@@ -194,6 +194,13 @@
 <!-- ─── Amount in words ───────────────────────────────────────────────────── -->
 <div class="words-row"><strong>INR in Words:</strong> {{ amount_in_words }}</div>
 
+<!-- ─── Late note (explains LD) ───────────────────────────────────────────── -->
+{% if late_days and late_days > 0 %}
+<div style="font-size:7.5pt; color:#555; margin-bottom:4pt;">
+  Late days: {{ late_days }} &rarr; {{ absent_from_late | int }} absent-equivalent (every 3 late = 1 day; covered by leave first, remainder charged as LD).
+</div>
+{% endif %}
+
 <!-- ─── Leave balance (TB / ULB / ALB × CL | SL | PL) ─────────────────────── -->
 <table class="leave-tbl" style="margin-bottom:5pt;">
   <tr>

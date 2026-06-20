@@ -63,9 +63,10 @@ interface AttendanceRow {
   days_lwp:   number | null;
   days_wo:    number | null;
   days_cl:    number | null;
-  days_el:    number | null;
+  days_pl:    number | null;
   days_sl:    number | null;
   days_h:     number | null;
+  late_days:  number | null;
   ot_hours:   number;
   salary_flag: string | null;
   status:     string;
@@ -288,11 +289,11 @@ export default function AttendancePage() {
 
   // ── Export CSV (client-side) ─────────────────────────────────────────────────
   const handleExportCsv = () => {
-    const header = "Emp Code,Name,Entity,Total Days,Pay Days,P,A,LWP,WO,CL,EL,SL,H,OT Hrs,Status\n";
+    const header = "Emp Code,Name,Entity,Total Days,Pay Days,P,A,LWP,WO,CL,PL,SL,H,LT,OT Hrs,Status\n";
     const body = filtered.map((r) =>
       [r.emp_code, r.name, r.entity_id, r.total_days ?? "", r.pay_days ?? "",
        r.days_p ?? "", r.days_a ?? "", r.days_lwp ?? "", r.days_wo ?? "",
-       r.days_cl ?? "", r.days_el ?? "", r.days_sl ?? "", r.days_h ?? "",
+       r.days_cl ?? "", r.days_pl ?? "", r.days_sl ?? "", r.days_h ?? "", r.late_days ?? "",
        r.ot_hours, r.status].join(",")
     ).join("\n");
     const blob = new Blob([header + body], { type: "text/csv;charset=utf-8;" });
@@ -523,9 +524,10 @@ export default function AttendancePage() {
                   <th className="text-center px-2 py-2.5 text-[9px] font-bold text-orange-700 bg-orange-50/60">L</th>
                   <th className="text-center px-2 py-2.5 text-[9px] font-bold text-[#5A5A5A]">R</th>
                   <th className="text-center px-2 py-2.5 text-[9px] font-bold text-blue-700 bg-blue-50/60">C</th>
-                  <th className="text-center px-2 py-2.5 text-[9px] font-bold text-blue-700 bg-blue-50/60">E</th>
+                  <th className="text-center px-2 py-2.5 text-[9px] font-bold text-blue-700 bg-blue-50/60">PL</th>
                   <th className="text-center px-2 py-2.5 text-[9px] font-bold text-blue-700 bg-blue-50/60">S</th>
                   <th className="text-center px-2 py-2.5 text-[9px] font-bold text-[#5A5A5A]">H</th>
+                  <th className="text-center px-2 py-2.5 text-[9px] font-bold text-[#D97706] bg-amber-50/60">LT</th>
                   <th className="text-center px-2 py-2.5 text-[9px] uppercase tracking-wide font-semibold text-[#5A5A5A] whitespace-nowrap">OT Hrs</th>
                   <th className="text-left px-3 py-2.5 text-[9px] uppercase tracking-wide font-semibold text-[#5A5A5A]">Status</th>
                   <th className="px-3 py-2.5 w-8" />
@@ -534,7 +536,7 @@ export default function AttendancePage() {
               <tbody>
                 {pageRows.map((row) => {
                   const isExpanded = expandedCode === row.emp_code;
-                  const colSpan = showEntityCol ? 16 : 15;
+                  const colSpan = showEntityCol ? 17 : 16;
                   return (
                     <Fragment key={row.emp_code}>
                       <tr
@@ -555,9 +557,10 @@ export default function AttendancePage() {
                         <td className="px-2 py-2.5 text-center text-xs text-orange-700 bg-orange-50/30">{fmt(row.days_lwp)}</td>
                         <td className="px-2 py-2.5 text-center text-xs text-[#5A5A5A]">{fmt(row.days_wo)}</td>
                         <td className="px-2 py-2.5 text-center text-xs text-blue-700 bg-blue-50/30">{fmt(row.days_cl)}</td>
-                        <td className="px-2 py-2.5 text-center text-xs text-blue-700 bg-blue-50/30">{fmt(row.days_el)}</td>
+                        <td className="px-2 py-2.5 text-center text-xs text-blue-700 bg-blue-50/30">{fmt(row.days_pl)}</td>
                         <td className="px-2 py-2.5 text-center text-xs text-blue-700 bg-blue-50/30">{fmt(row.days_sl)}</td>
                         <td className="px-2 py-2.5 text-center text-xs text-[#5A5A5A]">{fmt(row.days_h)}</td>
+                        <td className="px-2 py-2.5 text-center text-xs text-[#D97706] bg-amber-50/30">{fmt(row.late_days)}</td>
                         <td className="px-2 py-2.5 text-center text-xs text-[#5A5A5A]">{row.ot_hours > 0 ? row.ot_hours.toFixed(1) : "—"}</td>
                         <td className="px-3 py-2.5">
                           <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${

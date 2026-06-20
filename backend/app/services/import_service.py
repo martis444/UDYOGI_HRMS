@@ -641,8 +641,9 @@ async def parse_attendance_csv(file: UploadFile, db: Session) -> list[dict]:
             "days_lwp": _safe_int(raw.get("L", "")),
             "days_wo": _safe_int(raw.get("R", "")),
             "days_cl": _safe_int(raw.get("C", "")),
-            "days_el": _safe_int(raw.get("E", "")),
+            "days_pl": _safe_int(raw.get("PL", raw.get("E", ""))),  # PL column (legacy "E" = old EL)
             "days_sl": _safe_int(raw.get("S", "")),
+            "late_days": _safe_int(raw.get("LT", raw.get("Late", ""))),  # late-coming days (15.4)
             "days_h": _safe_int(raw.get("H", "")),
             "ot_hours": _safe_float(raw.get("OT Hours", "")),
             "salary_flag": str(raw.get("Salary Flag", "")).strip() or None,

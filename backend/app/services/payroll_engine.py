@@ -1,10 +1,9 @@
 import calendar
 import math
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import extract
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -13,6 +12,7 @@ from app.services.pt_resolver import get_pt_amount
 from app.services.period_calculator import get_working_days_info
 from app.services.salary_resolver import get_structure_for_period
 from app.services.loan_service import apply_emi_on_payroll
+from app.services.late_service import compute_late_effects
 
 
 def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
@@ -140,19 +140,25 @@ def process_payroll_month(
         data["pf_emp"] + data["esic_emp"] + int(data["pt"]) + loan_emi + data["other_deduction"]
     )
 
-    # Summarise attendance_daily for the month
+    # Attendance for this pay run uses the 26th cutoff cycle (15.3): pay period
+    # (year, month) covers the 26th of the previous month .. the 25th of this month.
+    # So a day on/after the 26th belongs to the NEXT month's run (matches how
+    # approved leave is reflected onto the attendance sheet).
+    cutoff = settings.CYCLE_CUTOFF_DAY
+    win_start = date(year - 1, 12, cutoff) if month == 1 else date(year, month - 1, cutoff)
+    win_end = date(year, month, cutoff - 1)
     att_rows = (
         db.query(AttendanceDaily)
         .filter(
             AttendanceDaily.emp_code == emp_code,
-            extract("year",  AttendanceDaily.att_date) == year,
-            extract("month", AttendanceDaily.att_date) == month,
+            AttendanceDaily.att_date >= win_start,
+            AttendanceDaily.att_date <= win_end,
         )
         .all()
     )
 
     # att_status values match the DB CHECK on attendance_daily (lowercase words),
-    # which is what the biometric processor + punch endpoint write.
+    # which is what the biometric processor + punch endpoint + leave reflection write.
     def _count(status: str) -> int:
         return sum(1 for r in att_rows if r.att_status == status)
 
@@ -160,11 +166,33 @@ def process_payroll_month(
     days_a   = _count("absent")
     days_wo  = _count("wo")
     days_cl  = _count("cl")
-    days_el  = _count("el")
+    days_pl  = _count("pl")
     days_sl  = _count("sl")
     days_h   = _count("holiday")
     days_lwp = _count("lwp")
     ot_hours = sum(float(r.ot_hours or 0) for r in att_rows)
+
+    # ── Late-coming penalty (15.4) ────────────────────────────────────────────
+    # Every 3 'late' days = 1 absent-equivalent, covered first from CL/SL/PL, the
+    # rest charged as LD. Uncovered late days are charged ONCE — as LD only — NOT
+    # also folded into the /30 LOP proration (LOP stays = real absent + lwp).
+    # Honour any admin override stored on the existing row.
+    absent_override = (
+        float(existing.absent_from_late) if (existing and existing.late_absent_overridden) else None
+    )
+    ld_override = float(existing.ld) if (existing and existing.ld_overridden) else None
+    late = compute_late_effects(
+        emp_code, year, month, db,
+        monthly_gross=data["gross"],
+        absent_override=absent_override,
+        ld_override=ld_override,
+    )
+    data["ld"] = late["ld"]
+    # ld feeds the DB-GENERATED total_deduction — recompute in Python to match.
+    data["total_deduction"] = (
+        data["pf_emp"] + data["esic_emp"] + int(data["pt"])
+        + data["loan_emi"] + data["other_deduction"] + data["ld"]
+    )
 
     # ── Period + working days (stored for display; not used for proration) ─────
     location_id = data.get("location_id") or "kol"
@@ -196,11 +224,14 @@ def process_payroll_month(
         days_a             = days_a or None,
         days_wo            = days_wo or None,
         days_cl            = days_cl or None,
-        days_el            = days_el or None,
+        days_pl            = days_pl or None,
         days_sl            = days_sl or None,
         days_h             = days_h or None,
         days_lwp           = days_lwp or None,
         ot_hours           = ot_hours or None,
+        late_days          = late["late_days"],
+        absent_from_late   = late["absent_from_late"],
+        ld                 = data["ld"],
         period_start       = wdi["period_start"],
         period_end         = wdi["period_end"],
         total_working_days = total_working_days,

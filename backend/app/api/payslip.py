@@ -131,8 +131,9 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
     esic_val = int(float(pm.esic_emp or 0))
     pt_val   = int(float(pm.pt or 0))
     loan_val = int(float(pm.loan_emi or 0))
+    ld_val   = int(round(float(pm.ld or 0)))   # Late Deduction (15.4)
     oth_ded  = int(float(pm.other_deduction or 0))
-    total_ded      = pf_val + esic_val + pt_val + loan_val + oth_ded
+    total_ded      = pf_val + esic_val + pt_val + loan_val + ld_val + oth_ded
     net_pay_display = total_earnings - total_ded
 
     return {
@@ -171,7 +172,7 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         "esic_ern":        int(float(pm.esic_ern or 0)),
         "pt":              pt_val,
         "loan_emi":        loan_val,
-        "ld":              0,   # Late Deduction — wired in 15.4; 0 for now
+        "ld":              ld_val,   # Late Deduction (15.4)
         "other_deduction": oth_ded,
         "total_deduction": total_ded,
         "net_pay":         net_pay_display,
@@ -182,10 +183,12 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         "days_a":     pm.days_a,
         "days_wo":    pm.days_wo,
         "days_cl":    pm.days_cl,
-        "days_el":    pm.days_el,
+        "days_pl":    pm.days_pl,
         "days_sl":    pm.days_sl,
         "days_h":     pm.days_h,
         "days_lwp":   pm.days_lwp,
+        "late_days":        int(pm.late_days or 0),
+        "absent_from_late": float(pm.absent_from_late or 0),
         "ot_hours":   float(pm.ot_hours or 0),
         "status":     pm.status,
         # employee / entity info
@@ -517,3 +520,86 @@ def unlock_payroll(
     ))
     db.commit()
     return {"unlocked_count": len(locked_rows), "status": "processed"}
+
+
+# ---------------------------------------------------------------------------
+# POST /late-override — admin edit of late-absent / LD before lock (15.4)
+# ---------------------------------------------------------------------------
+
+class LateOverrideBody(BaseModel):
+    emp_code: str
+    year:     int
+    month:    int
+    absent_from_late: Optional[float] = None
+    ld:               Optional[float] = None
+    reason:           str
+
+
+@payroll_router.post("/late-override")
+def late_override(
+    body: LateOverrideBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin", "entity_admin")),
+):
+    """Override the auto-computed late-absent days and/or LD for an UNLOCKED month.
+    Sets the override flag(s) so a later reprocess keeps the value, reconciles leave
+    coverage to the new absent_from_late, and recomputes net pay. Locked → 400."""
+    if body.absent_from_late is None and body.ld is None:
+        raise HTTPException(status_code=400, detail="Provide absent_from_late and/or ld to override")
+    if not body.reason or len(body.reason.strip()) < 4:
+        raise HTTPException(status_code=400, detail="A reason of at least 4 characters is required")
+
+    # Entity scope for non-super_admin.
+    scope = _my_entity(db, current_user)
+    emp_entity = db.query(Employee.entity_id).filter(Employee.emp_code == body.emp_code).scalar()
+    if emp_entity is None:
+        raise HTTPException(status_code=404, detail=f"Employee {body.emp_code} not found")
+    if scope is not None and emp_entity != scope:
+        raise HTTPException(status_code=403, detail="Access denied for this entity")
+
+    pm = (
+        db.query(PayrollMonth)
+        .filter(PayrollMonth.emp_code == body.emp_code,
+                PayrollMonth.year == body.year, PayrollMonth.month == body.month)
+        .first()
+    )
+    if pm and pm.status == "locked":
+        raise HTTPException(status_code=400, detail="Month is locked — overrides are not allowed")
+
+    # Ensure a processed row exists to override.
+    if pm is None:
+        pm = process_payroll_month(body.emp_code, body.year, body.month, db, generated_by=current_user.emp_code)
+
+    old = {"absent_from_late": float(pm.absent_from_late or 0), "ld": float(pm.ld or 0)}
+
+    if body.absent_from_late is not None:
+        pm.absent_from_late = body.absent_from_late
+        pm.late_absent_overridden = True
+    if body.ld is not None:
+        pm.ld = body.ld
+        pm.ld_overridden = True
+    db.commit()
+
+    # Reprocess honouring the override flags (reconciles leave + recomputes net).
+    pm = process_payroll_month(body.emp_code, body.year, body.month, db, generated_by=current_user.emp_code)
+
+    db.add(AuditLog(
+        user_code  = current_user.emp_code,
+        action     = "LATE_LD_OVERRIDE",
+        table_name = "payroll_months",
+        record_id  = f"{body.emp_code}-{body.year}-{body.month}",
+        old_values = old,
+        new_values = {
+            "absent_from_late": float(pm.absent_from_late or 0),
+            "ld":               float(pm.ld or 0),
+            "reason":           body.reason.strip(),
+        },
+    ))
+    db.commit()
+    return {
+        "emp_code": body.emp_code, "year": body.year, "month": body.month,
+        "absent_from_late": float(pm.absent_from_late or 0),
+        "ld": float(pm.ld or 0),
+        "ld_overridden": bool(pm.ld_overridden),
+        "late_absent_overridden": bool(pm.late_absent_overridden),
+    }

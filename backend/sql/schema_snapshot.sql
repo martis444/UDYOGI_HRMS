@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict zMfKbe5FezCHaJPovP1CA41nHVvebWNiiyMugtDFkSkLfag3iMXa7w5fYvW7i6n
+\restrict BB6AKcKkBbWdibTvSCCUlE7tY5ccOlpE0tBZiBqubgeSCoXQE5jfq2nInLWNiRK
 
 -- Dumped from database version 18.4
 -- Dumped by pg_dump version 18.4
@@ -132,7 +132,7 @@ CREATE TABLE public.attendance_daily (
     location_id character varying(40),
     source character varying(15) DEFAULT 'biometric'::character varying,
     remarks text,
-    CONSTRAINT attendance_daily_att_status_check CHECK (((att_status)::text = ANY ((ARRAY['present'::character varying, 'absent'::character varying, 'halfday'::character varying, 'late'::character varying, 'lwp'::character varying, 'cl'::character varying, 'el'::character varying, 'sl'::character varying, 'holiday'::character varying, 'wo'::character varying])::text[])))
+    CONSTRAINT attendance_daily_att_status_check CHECK (((att_status)::text = ANY ((ARRAY['present'::character varying, 'absent'::character varying, 'halfday'::character varying, 'late'::character varying, 'lwp'::character varying, 'cl'::character varying, 'pl'::character varying, 'sl'::character varying, 'holiday'::character varying, 'wo'::character varying])::text[])))
 );
 
 
@@ -573,7 +573,7 @@ CREATE TABLE public.leave_balances (
     accrued_ytd numeric(5,2) DEFAULT 0 NOT NULL,
     taken_ytd numeric(5,2) DEFAULT 0 NOT NULL,
     encashed_ytd numeric(5,2) DEFAULT 0 NOT NULL,
-    CONSTRAINT leave_balances_leave_type_check CHECK (((leave_type)::text = ANY ((ARRAY['CL'::character varying, 'EL'::character varying, 'SL'::character varying, 'ML'::character varying, 'PL'::character varying])::text[])))
+    CONSTRAINT leave_balances_leave_type_check CHECK (((leave_type)::text = ANY ((ARRAY['CL'::character varying, 'SL'::character varying, 'PL'::character varying])::text[])))
 );
 
 
@@ -812,7 +812,6 @@ CREATE TABLE public.payroll_months (
     pt numeric(8,2) DEFAULT 0 NOT NULL,
     loan_emi numeric(8,2) DEFAULT 0 NOT NULL,
     other_deduction numeric(8,2) DEFAULT 0 NOT NULL,
-    total_deduction numeric(10,2) GENERATED ALWAYS AS (((((pf_emp + esic_emp) + pt) + loan_emi) + other_deduction)) STORED,
     net_pay numeric(10,2) NOT NULL,
     total_days smallint DEFAULT 30 NOT NULL,
     pay_days smallint DEFAULT 30 NOT NULL,
@@ -821,7 +820,7 @@ CREATE TABLE public.payroll_months (
     days_lwp smallint DEFAULT 0,
     days_wo smallint DEFAULT 0,
     days_cl smallint DEFAULT 0,
-    days_el smallint DEFAULT 0,
+    days_pl smallint DEFAULT 0,
     days_sl smallint DEFAULT 0,
     days_h smallint DEFAULT 0,
     ot_hours numeric(5,2) DEFAULT 0,
@@ -843,6 +842,12 @@ CREATE TABLE public.payroll_months (
     income_tax numeric(10,2) DEFAULT 0 NOT NULL,
     lwf numeric(10,2) DEFAULT 0 NOT NULL,
     nps numeric(10,2) DEFAULT 0 NOT NULL,
+    late_days integer DEFAULT 0 NOT NULL,
+    absent_from_late numeric(5,2) DEFAULT 0 NOT NULL,
+    ld numeric(10,2) DEFAULT 0 NOT NULL,
+    ld_overridden boolean DEFAULT false NOT NULL,
+    late_absent_overridden boolean DEFAULT false NOT NULL,
+    total_deduction numeric(10,2) GENERATED ALWAYS AS ((((((pf_emp + esic_emp) + pt) + loan_emi) + other_deduction) + ld)) STORED,
     CONSTRAINT payroll_months_month_check CHECK (((month >= 1) AND (month <= 12))),
     CONSTRAINT payroll_months_status_check CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'processed'::character varying, 'locked'::character varying])::text[])))
 );
@@ -1111,6 +1116,7 @@ CREATE VIEW public.v_payslip_summary AS
     pm.pt,
     pm.loan_emi,
     pm.other_deduction,
+    pm.ld,
     pm.total_deduction,
     pm.net_pay,
     pm.total_days,
@@ -1120,9 +1126,11 @@ CREATE VIEW public.v_payslip_summary AS
     pm.days_lwp,
     pm.days_wo,
     pm.days_cl,
-    pm.days_el,
+    pm.days_pl,
     pm.days_sl,
     pm.days_h,
+    pm.late_days,
+    pm.absent_from_late,
     pm.ot_hours,
     pm.status,
     pm.salary_flag,
@@ -2061,5 +2069,5 @@ ALTER TABLE ONLY public.users
 -- PostgreSQL database dump complete
 --
 
-\unrestrict zMfKbe5FezCHaJPovP1CA41nHVvebWNiiyMugtDFkSkLfag3iMXa7w5fYvW7i6n
+\unrestrict BB6AKcKkBbWdibTvSCCUlE7tY5ccOlpE0tBZiBqubgeSCoXQE5jfq2nInLWNiRK
 

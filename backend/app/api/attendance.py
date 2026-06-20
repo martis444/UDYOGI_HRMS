@@ -101,11 +101,11 @@ async def validate_attendance_import(
 
         att_sum = (
             row["days_p"] + row["days_a"] + row["days_lwp"] + row["days_wo"]
-            + row["days_cl"] + row["days_el"] + row["days_sl"] + row["days_h"]
+            + row["days_cl"] + row["days_pl"] + row["days_sl"] + row["days_h"]
         )
         if att_sum != row["total_days"]:
             row_warnings.append(
-                f"P+A+L+R+C+E+S+H={att_sum} ≠ total_days={row['total_days']}"
+                f"P+A+L+R+C+PL+S+H={att_sum} ≠ total_days={row['total_days']}"
             )
 
         if row_warnings:
@@ -182,9 +182,10 @@ def commit_attendance_import(
             "days_lwp":   row.get("days_lwp"),
             "days_wo":    row.get("days_wo"),
             "days_cl":    row.get("days_cl"),
-            "days_el":    row.get("days_el"),
+            "days_pl":    row.get("days_pl"),
             "days_sl":    row.get("days_sl"),
             "days_h":     row.get("days_h"),
+            "late_days":  row.get("late_days") or 0,
             "ot_hours":   row.get("ot_hours"),
             "salary_flag": row.get("salary_flag") or None,
             "remarks":    row.get("remarks") or None,
@@ -243,7 +244,7 @@ def commit_attendance_import(
         leave_day_map = {
             "CL": int(row.get("days_cl") or 0),
             "SL": int(row.get("days_sl") or 0),
-            "EL": int(row.get("days_el") or 0),
+            "PL": int(row.get("days_pl") or 0),
         }
         for lt, days_taken in leave_day_map.items():
             if days_taken <= 0:
@@ -338,9 +339,10 @@ def monthly_summary(
             "days_lwp":    pm.days_lwp,
             "days_wo":     pm.days_wo,
             "days_cl":     pm.days_cl,
-            "days_el":     pm.days_el,
+            "days_pl":     pm.days_pl,
             "days_sl":     pm.days_sl,
             "days_h":      pm.days_h,
+            "late_days":   pm.late_days,
             "ot_hours":    float(pm.ot_hours or 0),
             "salary_flag": pm.salary_flag,
             "status":      pm.status,
@@ -437,13 +439,13 @@ def attendance_csv_template(
     )
 
     total_days = calendar.monthrange(year, month)[1]
-    header = "Emp Code,Employee Name,Total Days,Pay Days,P,A,L,R,C,E,S,H,OT Hours,Salary Flag,Flag,Remarks\n"
+    header = "Emp Code,Employee Name,Total Days,Pay Days,P,A,L,R,C,PL,S,H,LT,OT Hours,Salary Flag,Flag,Remarks\n"
 
     buf = io.StringIO()
     buf.write(header)
     for emp_code, name in employees:
         safe_name = (name or "").replace(",", " ")
-        cols = [emp_code, safe_name, str(total_days)] + [""] * 13
+        cols = [emp_code, safe_name, str(total_days)] + [""] * 14
         buf.write(",".join(cols) + "\n")
 
     filename = f"attendance_template_{year}_{month:02d}_{entity_id}.csv"
