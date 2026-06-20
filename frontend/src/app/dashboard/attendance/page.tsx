@@ -97,6 +97,7 @@ interface CommitResult {
   imported: number;
   skipped:  { emp_code: string; reason: string }[];
   codes:    string[];
+  warnings?: { emp_code: string; message: string }[];
 }
 
 // ─── GlassCard ────────────────────────────────────────────────────────────────
@@ -796,6 +797,16 @@ export default function AttendancePage() {
                         <p className="text-sm font-semibold text-green-700">{commitResult.imported} employees updated</p>
                         {commitResult.skipped.length > 0 && (
                           <p className="text-xs text-green-600">{commitResult.skipped.length} skipped (payroll locked)</p>
+                        )}
+                        {commitResult.warnings && commitResult.warnings.length > 0 && (
+                          <div className="mt-2 border-t border-green-200 pt-2">
+                            <p className="text-xs font-semibold text-[#D97706]">Approved leaves kept ({commitResult.warnings.length}):</p>
+                            <ul className="mt-1 space-y-0.5 max-h-32 overflow-y-auto">
+                              {commitResult.warnings.map((w, i) => (
+                                <li key={i} className="text-[11px] text-[#92400E]">{w.message}</li>
+                              ))}
+                            </ul>
+                          </div>
                         )}
                       </div>
                       <button

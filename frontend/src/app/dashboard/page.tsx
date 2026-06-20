@@ -21,6 +21,7 @@ import {
   AlertCircle,
   ChevronRight,
   CalendarDays,
+  CalendarCheck,
   LogIn,
   LogOut,
   Timer,
@@ -417,6 +418,44 @@ function fmtLeaveDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
+// ─── Used leaves card (15.8) — reads ULB from the shared cache (15.7) ─────────
+function UsedLeavesCard({ empCode }: { empCode: string }) {
+  const { balances } = useLeaveBalance(empCode);   // same shared cache key as the balance card
+  if (!balances || balances._meta?.category === "worker") return null;
+
+  const totalUsed = LEAVE_TYPES.reduce((acc, { value }) => {
+    const e = balances[value as "CL" | "SL" | "PL"];
+    return acc + (e ? Math.floor(e.ulb ?? e.used) : 0);
+  }, 0);
+
+  return (
+    <GlassCard className="p-5">
+      <h2 className="text-[#1A1A1A] font-semibold text-sm mb-4 flex items-center gap-2">
+        <CalendarCheck size={15} color="#E5202E" /> Used leaves
+      </h2>
+      <div className="flex gap-2 flex-wrap">
+        {LEAVE_TYPES.map(({ value, color }) => {
+          const e = balances[value as "CL" | "SL" | "PL"];
+          const ulb = e ? Math.floor(e.ulb ?? e.used) : 0;     // used (matches payslip ULB)
+          const tb  = e ? Math.floor(e.tb ?? e.entitlement) : 0; // allotted total
+          return (
+            <div
+              key={value}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+              style={{ background: `${color}12`, color, border: `1.5px solid ${color}30` }}
+            >
+              {value}
+              <span className="font-bold text-[#1A1A1A]">{ulb}</span>
+              <span className="text-[#6B6B6B]">/ {tb}</span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[#6B6B6B] text-xs mt-3">Total used: <span className="font-semibold text-[#1A1A1A]">{totalUsed}</span> day{totalUsed === 1 ? "" : "s"} this leave year.</p>
+    </GlassCard>
+  );
+}
+
 function MyLeaveRequestsCard({ refreshKey }: { refreshKey: number }) {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -618,8 +657,11 @@ export default function DashboardPage() {
         </GlassCard>
       )}
 
-      {/* Leave apply + status */}
-      <LeaveApplyCard empCode={user.emp_code} onApplied={() => setLeaveRefresh((k) => k + 1)} />
+      {/* Leave apply + balance + used (share the 15.7 cache → invalidate/refetch together) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <LeaveApplyCard empCode={user.emp_code} onApplied={() => setLeaveRefresh((k) => k + 1)} />
+        <UsedLeavesCard empCode={user.emp_code} />
+      </div>
       <MyLeaveRequestsCard refreshKey={leaveRefresh} />
 
       {/* Quick actions */}

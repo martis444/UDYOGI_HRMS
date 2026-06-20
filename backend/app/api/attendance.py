@@ -8,14 +8,50 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.db import get_db
 from app.core.dependencies import get_current_user, require_role
-from app.models.employee import AuditLog, AttendanceDaily, AttendanceRaw, Employee, LeaveBalance, PayrollMonth, User
+from app.models.employee import AuditLog, AttendanceDaily, AttendanceRaw, Employee, PayrollMonth, User
 from app.services.import_service import parse_attendance_csv
 from app.services.payroll_engine import compute_payroll
 from app.services.period_calculator import get_working_days_info
 
 router = APIRouter()
+
+# leave att_status code -> CSV leave type label
+_ATT_TO_LEAVE = {"cl": "CL", "sl": "SL", "pl": "PL"}
+
+
+def _attendance_window(year: int, month: int) -> tuple[date, date]:
+    """The 26th-cutoff pay-cycle window for a period (same one the payroll engine
+    uses): 26th of the previous month .. 25th of this month."""
+    c = settings.CYCLE_CUTOFF_DAY
+    start = date(year - 1, 12, c) if month == 1 else date(year, month - 1, c)
+    end = date(year, month, c - 1)
+    return start, end
+
+
+def _approved_leaves_in_window(db: Session, start: date, end: date,
+                               emp_codes: list[str] | None = None) -> dict[str, dict[str, list[date]]]:
+    """Approved leave days per employee in the window, from attendance_daily rows
+    written by leave approval (att_status cl/sl/pl). → {emp: {CL:[dates], SL:[...], PL:[...]}}."""
+    q = (
+        db.query(AttendanceDaily)
+        .filter(
+            AttendanceDaily.att_status.in_(["cl", "sl", "pl"]),
+            AttendanceDaily.att_date >= start,
+            AttendanceDaily.att_date <= end,
+        )
+    )
+    if emp_codes:
+        q = q.filter(AttendanceDaily.emp_code.in_(emp_codes))
+    out: dict[str, dict[str, list[date]]] = {}
+    for r in q.all():
+        lt = _ATT_TO_LEAVE.get(r.att_status)
+        if not lt:
+            continue
+        out.setdefault(r.emp_code, {"CL": [], "SL": [], "PL": []})[lt].append(r.att_date)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +190,14 @@ def commit_attendance_import(
     now = datetime.now(timezone.utc)
     imported: list[str] = []
     skipped: list[dict] = []
+    warnings: list[dict] = []
+
+    # Approved-leave protection (15.8): approved leaves in this period's 26→25 window
+    # are authoritative. If a re-upload tries to reduce a bucket below its approved
+    # count, keep the approved count and warn (do not silently overwrite).
+    win_start, win_end = _attendance_window(body.year, body.month)
+    row_codes = [r.get("emp_code") for r in body.rows if r.get("emp_code")]
+    approved_map = _approved_leaves_in_window(db, win_start, win_end, row_codes)
 
     for row in body.rows:
         emp_code = row.get("emp_code")
@@ -190,6 +234,21 @@ def commit_attendance_import(
             "salary_flag": row.get("salary_flag") or None,
             "remarks":    row.get("remarks") or None,
         }
+
+        # Protect approved leaves: never let the upload reduce a bucket below its
+        # approved-in-window count. Clamp up + warn (the approved leave is kept).
+        appr = approved_map.get(emp_code)
+        if appr:
+            for lt, field in (("CL", "days_cl"), ("SL", "days_sl"), ("PL", "days_pl")):
+                appr_n = len(appr[lt])
+                up_n = int(att.get(field) or 0)
+                if appr_n > 0 and up_n < appr_n:
+                    att[field] = appr_n
+                    dates = " ".join(d.strftime("%d-%b") for d in sorted(appr[lt]))
+                    warnings.append({
+                        "emp_code": emp_code,
+                        "message": f"{emp_code}: uploaded {lt}={up_n} but {appr_n} approved ({dates}) — kept {lt}={appr_n}.",
+                    })
 
         if existing:
             for field, val in att.items():
@@ -240,41 +299,9 @@ def commit_attendance_import(
         pm_obj.period_end         = wdi["period_end"]
         pm_obj.total_working_days = wdi["total_working_days"]
 
-        # ── Leave balance deduction ───────────────────────────────────────────
-        leave_day_map = {
-            "CL": int(row.get("days_cl") or 0),
-            "SL": int(row.get("days_sl") or 0),
-            "PL": int(row.get("days_pl") or 0),
-        }
-        for lt, days_taken in leave_day_map.items():
-            if days_taken <= 0:
-                continue
-            lb = (
-                db.query(LeaveBalance)
-                .filter(
-                    LeaveBalance.emp_code == emp_code,
-                    LeaveBalance.leave_type == lt,
-                    LeaveBalance.year == body.year,
-                )
-                .first()
-            )
-            if lb is None:
-                continue
-            old_used = float(lb.used or 0)
-            lb.used = old_used + days_taken
-            if lb.taken_ytd is not None:
-                lb.taken_ytd = float(lb.taken_ytd or 0) + days_taken
-            db.add(AuditLog(
-                user_code  = current_user.emp_code,
-                action     = "LEAVE_DEDUCT",
-                table_name = "leave_balances",
-                record_id  = emp_code,
-                new_values = {
-                    "leave_type":    lt,
-                    "days_deducted": days_taken,
-                    "new_used":      float(lb.used),
-                },
-            ))
+        # NOTE (15.7/15.8): leave `used` is mutated ONLY at the approval point — the
+        # import no longer deducts leave balances (that would double-count against the
+        # single source of truth). Approved leaves are protected via the clamp above.
 
         imported.append(emp_code)
 
@@ -293,7 +320,7 @@ def commit_attendance_import(
     ))
     db.commit()
 
-    return {"imported": len(imported), "skipped": skipped, "codes": imported}
+    return {"imported": len(imported), "skipped": skipped, "codes": imported, "warnings": warnings}
 
 
 # ---------------------------------------------------------------------------
@@ -441,12 +468,39 @@ def attendance_csv_template(
     total_days = calendar.monthrange(year, month)[1]
     header = "Emp Code,Employee Name,Total Days,Pay Days,P,A,L,R,C,PL,S,H,LT,OT Hours,Salary Flag,Flag,Remarks\n"
 
+    # Pre-mark APPROVED leaves for this period's 26→25 window (15.8). This template
+    # is aggregate-count format (no per-day cells), so we pre-fill the C/PL/S COUNT
+    # columns with the approved-leave day counts and list the exact dates in Remarks
+    # so the admin can see them and must not reduce them. (Window matches the payslip.)
+    win_start, win_end = _attendance_window(year, month)
+    emp_codes = [e.emp_code for e in employees]
+    approved = _approved_leaves_in_window(db, win_start, win_end, emp_codes)
+
+    def _fmt_dates(ds: list[date]) -> str:
+        return " ".join(d.strftime("%d-%b") for d in sorted(ds))
+
     buf = io.StringIO()
     buf.write(header)
     for emp_code, name in employees:
         safe_name = (name or "").replace(",", " ")
+        # cols: 0 EmpCode 1 Name 2 TotalDays 3 PayDays 4 P 5 A 6 L 7 R 8 C 9 PL 10 S
+        #       11 H 12 LT 13 OT 14 SalaryFlag 15 Flag 16 Remarks
         cols = [emp_code, safe_name, str(total_days)] + [""] * 14
+        appr = approved.get(emp_code)
+        if appr:
+            if appr["CL"]: cols[8]  = str(len(appr["CL"]))
+            if appr["PL"]: cols[9]  = str(len(appr["PL"]))
+            if appr["SL"]: cols[10] = str(len(appr["SL"]))
+            notes = [f"{lt} {_fmt_dates(appr[lt])}" for lt in ("CL", "SL", "PL") if appr[lt]]
+            if notes:
+                cols[16] = "APPROVED (do not edit): " + "; ".join(notes)
         buf.write(",".join(cols) + "\n")
+
+    # Legend (blank Emp Code → parser skips these rows).
+    buf.write("\n")
+    buf.write(",LEGEND: C=Casual SL=Sick PL=Privilege counts for the 26th-25th cycle.\n")
+    buf.write(",C/PL/S columns pre-filled with APPROVED leave days — do NOT reduce them; see Remarks for dates.\n")
+    buf.write(",Fill P (present) / A (absent) / L (LWP) / R (weekly off) / H (holiday) / LT (late) for the rest.\n")
 
     filename = f"attendance_template_{year}_{month:02d}_{entity_id}.csv"
     return StreamingResponse(
