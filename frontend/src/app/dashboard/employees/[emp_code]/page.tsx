@@ -27,7 +27,7 @@ interface Emp {
   entity_id: string; location_id: string; department_id?: number;
   division?: string; designation?: string; grade_id?: number;
   reporting_mgr_code?: string; shift_id?: number;
-  ctc_annual?: string; basic?: string; hra?: string; da?: string;
+  ctc_annual?: string; basic?: string; hra?: string;
   spl?: string; cca?: string; monthly_gross?: string;
   pf_applicable?: boolean; esic_applicable?: boolean; pt_applicable?: boolean;
   pan?: string; aadhaar?: string; uan?: string; esic_no?: string;
@@ -154,7 +154,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
   }, []);
 
   // Gross live calc in edit mode
-  const editGross = ["basic", "hra", "da", "spl", "cca"].reduce((acc, k) => {
+  const editGross = ["basic", "hra", "spl", "cca"].reduce((acc, k) => {
     const v = parseFloat(String(editForm[k as keyof Emp] ?? ""));
     return acc + (isNaN(v) ? 0 : v);
   }, 0);
@@ -167,7 +167,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
       // Build update body (omit emp_code, nullify empties to skip)
       const body: Record<string, unknown> = {};
       const intFields = ["department_id", "grade_id", "shift_id"] as (keyof Emp)[];
-      const numFields = ["basic", "hra", "da", "spl", "cca", "ctc_annual"] as (keyof Emp)[];
+      const numFields = ["basic", "hra", "spl", "cca", "ctc_annual"] as (keyof Emp)[];
       for (const [k, v] of Object.entries(editForm)) {
         if (k === "emp_code" || k === "entity_id") continue; // immutable
         if (v === "" || v === null || v === undefined) continue; // skip blank
@@ -347,7 +347,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
           <GlassCard>
             <SectionTitle>Salary</SectionTitle>
             <div className="p-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {(["basic", "hra", "da", "spl", "cca", "ctc_annual"] as (keyof Emp)[]).map((f) => (
+              {(["basic", "hra", "spl", "cca", "ctc_annual"] as (keyof Emp)[]).map((f) => (
                 <InfoRow key={f} label={f.toUpperCase().replace("_", " ")} value={emp[f] ? `₹${parseFloat(String(emp[f])).toLocaleString("en-IN")}` : undefined} />
               ))}
               <InfoRow label="PF applicable" value={emp.pf_applicable} />
@@ -483,7 +483,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
           <GlassCard>
             <SectionTitle>Salary</SectionTitle>
             <div className="p-5 grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {(["basic", "hra", "da", "spl", "cca"] as (keyof Emp)[]).map((f) => (
+              {(["basic", "hra", "spl", "cca"] as (keyof Emp)[]).map((f) => (
                 <EditField key={f} label={String(f).toUpperCase()}>
                   <div className="relative">
                     <IndianRupee size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" />

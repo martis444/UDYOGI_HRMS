@@ -115,9 +115,6 @@ _COL_MAP: dict[str, str] = {
     # hra
     "hra": "hra",
     "house rent allowance": "hra",
-    # da
-    "da": "da",
-    "dearness allowance": "da",
     # spl
     "spl": "spl",
     "special allowance": "spl",
@@ -482,13 +479,12 @@ def commit_import(
 
             basic           = _row_dec(row, "basic")
             hra             = _row_dec(row, "hra")
-            da              = _row_dec(row, "da")
             spl             = _row_dec(row, "spl")
             cca             = _row_dec(row, "cca")
             leave_travel    = _row_dec(row, "leave_travel") or Decimal("0")
             other_allowance = _row_dec(row, "other_allowance") or Decimal("0")
             # Statutory gross excludes other_allowance
-            gross = sum((v for v in [basic, hra, da, spl, cca, leave_travel] if v), Decimal("0"))
+            gross = sum((v for v in [basic, hra, spl, cca, leave_travel] if v), Decimal("0"))
 
             aadhaar = row.get("aadhaar")
             bank_acc = row.get("bank_acc")
@@ -522,7 +518,6 @@ def commit_import(
                 ctc_annual=_row_dec(row, "ctc_annual"),
                 basic=basic,
                 hra=hra,
-                da=da,
                 spl=spl,
                 cca=cca,
                 leave_travel=leave_travel,

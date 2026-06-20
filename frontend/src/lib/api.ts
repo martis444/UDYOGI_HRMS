@@ -129,7 +129,6 @@ export interface SalaryStructureRow {
   effective_to: string | null;
   basic: number;
   hra: number;
-  da: number;
   spl: number;
   cca: number;
   leave_travel: number;

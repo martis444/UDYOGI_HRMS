@@ -22,16 +22,16 @@ from app.models.employee import (
 
 router = APIRouter()
 
-_SALARY_FIELDS = {"basic", "hra", "da", "spl", "cca"}
+_SALARY_FIELDS = {"basic", "hra", "spl", "cca"}
 
 ALLOWED_COLUMNS = [
     "department_id", "grade_id", "shift_id", "designation",
-    "location_id", "reporting_mgr_code", "basic", "hra", "da",
+    "location_id", "reporting_mgr_code", "basic", "hra",
     "spl", "cca", "ctc_annual", "bank_name", "ifsc", "bank_branch",
 ]
 _ALLOWED_SET = set(ALLOWED_COLUMNS)
 _LOCKED_SET = {"emp_code", "pan", "aadhaar_enc", "bank_acc_enc", "entity_id"}
-_NUMERIC_COLS = {"basic", "hra", "da", "spl", "cca", "ctc_annual"}
+_NUMERIC_COLS = {"basic", "hra", "spl", "cca", "ctc_annual"}
 _INT_COLS = {"department_id", "grade_id", "shift_id"}
 
 
@@ -135,7 +135,7 @@ def _compute_gross(*values) -> Decimal:
 
 def _build_master_row(emp: Employee, db: Session) -> dict:
     aadhaar_plain = _pgp_decrypt(db, emp.aadhaar_enc)
-    gross = _compute_gross(emp.basic, emp.hra, emp.da, emp.spl, emp.cca)
+    gross = _compute_gross(emp.basic, emp.hra, emp.spl, emp.cca)
     return {
         "emp_code": emp.emp_code,
         "legacy_code": emp.legacy_code,
@@ -164,7 +164,6 @@ def _build_master_row(emp: Employee, db: Session) -> dict:
         "ctc_annual": emp.ctc_annual,
         "basic": emp.basic,
         "hra": emp.hra,
-        "da": emp.da,
         "spl": emp.spl,
         "cca": emp.cca,
         "monthly_gross": gross,
@@ -299,7 +298,7 @@ def master_data_export(
         "marital_status", "blood_group", "religion", "mobile", "email", "doj",
         "entity_id", "location_id", "location_city", "location_state",
         "department", "division", "designation", "grade", "reporting_mgr_code",
-        "shift_id", "ctc_annual", "basic", "hra", "da", "spl", "cca",
+        "shift_id", "ctc_annual", "basic", "hra", "spl", "cca",
         "monthly_gross", "pf_applicable", "esic_applicable", "pt_applicable",
         "pan", "aadhaar", "uan", "esic_no", "bank_name", "ifsc", "bank_branch",
         "present_addr", "present_city", "present_state", "present_pin",
@@ -312,7 +311,7 @@ def master_data_export(
 
     for emp in employees:
         aadhaar_plain = _pgp_decrypt(db, emp.aadhaar_enc)
-        gross = _compute_gross(emp.basic, emp.hra, emp.da, emp.spl, emp.cca)
+        gross = _compute_gross(emp.basic, emp.hra, emp.spl, emp.cca)
         writer.writerow({
             "emp_code": emp.emp_code,
             "legacy_code": emp.legacy_code or "",
@@ -339,7 +338,6 @@ def master_data_export(
             "ctc_annual": str(emp.ctc_annual) if emp.ctc_annual else "",
             "basic": str(emp.basic) if emp.basic else "",
             "hra": str(emp.hra) if emp.hra else "",
-            "da": str(emp.da) if emp.da else "",
             "spl": str(emp.spl) if emp.spl else "",
             "cca": str(emp.cca) if emp.cca else "",
             "monthly_gross": str(gross),
@@ -568,7 +566,7 @@ def column_update_commit(
                 salary_changed = True
 
         if salary_changed:
-            gross = _compute_gross(emp.basic, emp.hra, emp.da, emp.spl, emp.cca)
+            gross = _compute_gross(emp.basic, emp.hra, emp.spl, emp.cca)
             old_vals["esic_applicable"] = str(emp.esic_applicable)
             emp.esic_applicable = gross <= Decimal("21000")
             new_vals["esic_applicable"] = str(emp.esic_applicable)

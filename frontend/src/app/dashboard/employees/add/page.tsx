@@ -34,7 +34,7 @@ type FormState = {
   designation: string; division: string; grade_id: string;
   shift_id: string; reporting_mgr_code: string;
   // Salary
-  basic: string; hra: string; da: string; spl: string; cca: string;
+  basic: string; hra: string; spl: string; cca: string;
   ctc_annual: string; pf_applicable: boolean; pt_applicable: boolean;
   // Statutory
   pan: string; aadhaar: string; uan: string; esic_no: string;
@@ -50,7 +50,7 @@ const EMPTY: FormState = {
   gender: "", father_name: "", marital_status: "", blood_group: "", religion: "",
   entity_id: "", location_id: "", department_id: "", designation: "", division: "",
   grade_id: "", shift_id: "", reporting_mgr_code: "",
-  basic: "", hra: "", da: "", spl: "", cca: "", ctc_annual: "",
+  basic: "", hra: "", spl: "", cca: "", ctc_annual: "",
   pf_applicable: true, pt_applicable: true,
   pan: "", aadhaar: "", uan: "", esic_no: "",
   bank_name: "", bank_acc: "", ifsc: "", bank_branch: "",
@@ -137,7 +137,7 @@ export default function AddEmployeePage() {
     setOpenSections((s) => ({ ...s, [k]: !s[k] }));
 
   // Gross calc
-  const gross = ["basic", "hra", "da", "spl", "cca"].reduce((acc, k) => {
+  const gross = ["basic", "hra", "spl", "cca"].reduce((acc, k) => {
     const v = parseFloat(form[k as keyof FormState] as string);
     return acc + (isNaN(v) ? 0 : v);
   }, 0);
@@ -162,7 +162,7 @@ export default function AddEmployeePage() {
         "bank_name", "bank_acc", "ifsc", "bank_branch",
         "present_addr", "present_city", "present_state", "present_pin",
         "perm_addr", "perm_city", "perm_state", "perm_pin", "status",
-        "ctc_annual", "basic", "hra", "da", "spl", "cca",
+        "ctc_annual", "basic", "hra", "spl", "cca",
       ];
       for (const f of strFields) {
         const v = form[f];
@@ -335,7 +335,7 @@ export default function AddEmployeePage() {
         {/* ── Section 3: Salary ── */}
         <Section title="Salary" open={openSections.salary} onToggle={() => toggleSection("salary")}>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {(["basic", "hra", "da", "spl", "cca"] as (keyof FormState)[]).map((field) => (
+            {(["basic", "hra", "spl", "cca"] as (keyof FormState)[]).map((field) => (
               <Field key={field} label={field.toUpperCase()}>
                 <div className="relative">
                   <IndianRupee size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" />

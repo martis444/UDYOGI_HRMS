@@ -56,7 +56,7 @@ const TEMPLATE_HEADERS = [
   "emp_code", "legacy_code", "name", "father_name", "dob", "gender",
   "marital_status", "blood_group", "religion", "mobile", "email", "doj",
   "entity_id", "location_id", "department_id", "division", "designation",
-  "grade_id", "shift_id", "ctc_annual", "basic", "hra", "da", "spl", "cca",
+  "grade_id", "shift_id", "ctc_annual", "basic", "hra", "spl", "cca",
   "pf_applicable", "pt_applicable", "pan", "aadhaar", "uan", "esic_no",
   "bank_name", "bank_acc", "ifsc", "bank_branch",
   "present_addr", "present_city", "present_state", "present_pin",

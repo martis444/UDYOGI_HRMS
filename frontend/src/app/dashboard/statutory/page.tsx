@@ -73,11 +73,11 @@ function resolvePT(stateCode: string, gross: number, gender: string, month: numb
 // ─── Payroll calculator ───────────────────────────────────────────────────────
 
 function calcPayroll(
-  basic: number, hra: number, da: number, spl: number, cca: number,
+  basic: number, hra: number, spl: number, cca: number,
   stateCode: string, gender: string, month: number, allRows: StatutoryRow[]
 ) {
-  const gross = basic + hra + da + spl + cca;
-  const pf = Math.min(Math.round((basic + da) * 0.12), 1800);
+  const gross = basic + hra + spl + cca;
+  const pf = Math.min(Math.round(basic * 0.12), 1800);
   const esic = gross <= 21000 ? Math.ceil(gross * 0.0075) : 0;
   const pt = resolvePT(stateCode, gross, gender, month, allRows);
   const net = gross - pf - esic - pt;
@@ -176,9 +176,8 @@ function PTStateCard({ stateCode, rows }: { stateCode: string; rows: StatutoryRo
 // ─── Live calculator ──────────────────────────────────────────────────────────
 
 function LiveCalculator({ allRows }: { allRows: StatutoryRow[] }) {
-  const [basic, setBasic] = useState("5000");
+  const [basic, setBasic] = useState("6000");
   const [hra, setHra] = useState("2000");
-  const [da, setDa] = useState("1000");
   const [spl, setSpl] = useState("800");
   const [cca, setCca] = useState("0");
   const [location, setLocation] = useState("Kolkata");
@@ -187,7 +186,7 @@ function LiveCalculator({ allRows }: { allRows: StatutoryRow[] }) {
 
   const loc = LOCATION_PT.find((l) => l.city === location) ?? LOCATION_PT[0];
   const result = calcPayroll(
-    Number(basic) || 0, Number(hra) || 0, Number(da) || 0,
+    Number(basic) || 0, Number(hra) || 0,
     Number(spl) || 0, Number(cca) || 0,
     loc.state_code, gender, month, allRows
   );
@@ -217,10 +216,6 @@ function LiveCalculator({ allRows }: { allRows: StatutoryRow[] }) {
           <label className="block">
             <span className="text-[#5A5A5A] text-xs mb-1 block">HRA (₹)</span>
             <input type="number" value={hra} onChange={(e) => setHra(e.target.value)} className={inputCls} min="0" />
-          </label>
-          <label className="block">
-            <span className="text-[#5A5A5A] text-xs mb-1 block">DA (₹)</span>
-            <input type="number" value={da} onChange={(e) => setDa(e.target.value)} className={inputCls} min="0" />
           </label>
           <label className="block">
             <span className="text-[#5A5A5A] text-xs mb-1 block">Special allowance (₹)</span>
@@ -301,7 +296,7 @@ function LiveCalculator({ allRows }: { allRows: StatutoryRow[] }) {
             <p className="text-[#5A5A5A] text-[10px] uppercase tracking-wide font-semibold mb-2">Employer cost</p>
             <div className="flex justify-between">
               <span className="text-[#5A5A5A] text-xs">PF (employer 13%)</span>
-              <span className="text-[#5A5A5A] text-xs font-medium">₹{fmt(Math.min(Math.round((Number(basic) + Number(da)) * 0.13), 2340))}</span>
+              <span className="text-[#5A5A5A] text-xs font-medium">₹{fmt(Math.min(Math.round(Number(basic) * 0.13), 2340))}</span>
             </div>
             {result.gross <= 21000 && (
               <div className="flex justify-between">
@@ -313,7 +308,7 @@ function LiveCalculator({ allRows }: { allRows: StatutoryRow[] }) {
             <div className="flex justify-between">
               <span className="text-[#5A5A5A] text-xs font-semibold">Total CTC (approx)</span>
               <span className="text-[#1A1A1A] text-xs font-bold">
-                ₹{fmt(result.gross + Math.min(Math.round((Number(basic) + Number(da)) * 0.13), 2340) + (result.gross <= 21000 ? Math.ceil(result.gross * 0.0325) : 0))}
+                ₹{fmt(result.gross + Math.min(Math.round(Number(basic) * 0.13), 2340) + (result.gross <= 21000 ? Math.ceil(result.gross * 0.0325) : 0))}
               </span>
             </div>
           </div>
@@ -403,11 +398,11 @@ export default function StatutoryPage() {
                 <div className="space-y-2.5">
                   <div className="flex justify-between items-center">
                     <span className="text-[#5A5A5A] text-xs">Employee deduction</span>
-                    <span className="text-[#1A1A1A] font-semibold text-sm">12% of Basic+DA</span>
+                    <span className="text-[#1A1A1A] font-semibold text-sm">12% of Basic</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-[#5A5A5A] text-xs">Employer contribution</span>
-                    <span className="text-[#1A1A1A] font-semibold text-sm">13% of Basic+DA</span>
+                    <span className="text-[#1A1A1A] font-semibold text-sm">13% of Basic</span>
                   </div>
                   <div className="h-px bg-[#E2E2DF]" />
                   <div className="flex justify-between items-center">
@@ -420,7 +415,7 @@ export default function StatutoryPage() {
                   </div>
                   <div className="h-px bg-[#E2E2DF]" />
                   <p className="text-[#5A5A5A] text-[10px] leading-relaxed">
-                    Cap applies when Basic+DA exceeds ₹15,000. Employer contribution = EPF 3.67% + EPS 8.33%.
+                    Cap applies when Basic exceeds ₹15,000. Employer contribution = EPF 3.67% + EPS 8.33%.
                   </p>
                 </div>
               </GlassCard>

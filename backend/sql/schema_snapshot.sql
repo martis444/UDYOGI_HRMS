@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict bx1Wgo8BOnHDAQouBOi1f8QlHsqyfe3ML1obxXgu39TrWZLcmszq5aLZGnnqdBx
+\restrict zMfKbe5FezCHaJPovP1CA41nHVvebWNiiyMugtDFkSkLfag3iMXa7w5fYvW7i6n
 
 -- Dumped from database version 18.4
 -- Dumped by pg_dump version 18.4
@@ -396,7 +396,6 @@ CREATE TABLE public.employees (
     ctc_annual numeric(12,2) DEFAULT 0,
     basic numeric(10,2) DEFAULT 0,
     hra numeric(10,2) DEFAULT 0,
-    da numeric(10,2) DEFAULT 0,
     spl numeric(10,2) DEFAULT 0,
     cca numeric(10,2) DEFAULT 0,
     pf_applicable boolean DEFAULT true,
@@ -803,7 +802,6 @@ CREATE TABLE public.payroll_months (
     month smallint NOT NULL,
     basic numeric(10,2) NOT NULL,
     hra numeric(10,2) DEFAULT 0 NOT NULL,
-    da numeric(10,2) DEFAULT 0 NOT NULL,
     spl numeric(10,2) DEFAULT 0 NOT NULL,
     cca numeric(10,2) DEFAULT 0 NOT NULL,
     gross numeric(10,2) NOT NULL,
@@ -915,7 +913,6 @@ CREATE TABLE public.salary_structures (
     effective_to date,
     basic numeric(10,2) DEFAULT 0 NOT NULL,
     hra numeric(10,2) DEFAULT 0 NOT NULL,
-    da numeric(10,2) DEFAULT 0 NOT NULL,
     spl numeric(10,2) DEFAULT 0 NOT NULL,
     cca numeric(10,2) DEFAULT 0 NOT NULL,
     leave_travel numeric(10,2) DEFAULT 0 NOT NULL,
@@ -1072,10 +1069,9 @@ CREATE VIEW public.v_employee_full AS
     e.ctc_annual,
     e.basic,
     e.hra,
-    e.da,
     e.spl,
     e.cca,
-    ((((e.basic + e.hra) + e.da) + e.spl) + e.cca) AS monthly_gross,
+    (((e.basic + e.hra) + e.spl) + e.cca) AS monthly_gross,
     e.pan,
     e.uan,
     e.esic_no,
@@ -1105,7 +1101,6 @@ CREATE VIEW public.v_payslip_summary AS
     pm.month,
     pm.basic,
     pm.hra,
-    pm.da,
     pm.spl,
     pm.cca,
     pm.gross,
@@ -2066,5 +2061,5 @@ ALTER TABLE ONLY public.users
 -- PostgreSQL database dump complete
 --
 
-\unrestrict bx1Wgo8BOnHDAQouBOi1f8QlHsqyfe3ML1obxXgu39TrWZLcmszq5aLZGnnqdBx
+\unrestrict zMfKbe5FezCHaJPovP1CA41nHVvebWNiiyMugtDFkSkLfag3iMXa7w5fYvW7i6n
 

@@ -39,7 +39,6 @@ class EmployeeCreate(BaseModel):
     ctc_annual: Optional[Decimal] = None
     basic: Optional[Decimal] = None
     hra: Optional[Decimal] = None
-    da: Optional[Decimal] = None
     spl: Optional[Decimal] = None
     cca: Optional[Decimal] = None
     leave_travel: Optional[Decimal] = Decimal("0")
@@ -134,7 +133,6 @@ class EmployeeUpdate(BaseModel):
     ctc_annual: Optional[Decimal] = None
     basic: Optional[Decimal] = None
     hra: Optional[Decimal] = None
-    da: Optional[Decimal] = None
     spl: Optional[Decimal] = None
     cca: Optional[Decimal] = None
     leave_travel: Optional[Decimal] = None
@@ -226,7 +224,6 @@ class EmployeeResponse(BaseModel):
     ctc_annual: Optional[Decimal] = None
     basic: Optional[Decimal] = None
     hra: Optional[Decimal] = None
-    da: Optional[Decimal] = None
     spl: Optional[Decimal] = None
     cca: Optional[Decimal] = None
     leave_travel: Optional[Decimal] = None

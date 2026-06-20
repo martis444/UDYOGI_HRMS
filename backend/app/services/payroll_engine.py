@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import extract
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.employee import AuditLog, AttendanceDaily, Employee, Location, PayrollMonth
 from app.services.pt_resolver import get_pt_amount
 from app.services.period_calculator import get_working_days_info
@@ -34,15 +35,15 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
 
     basic           = float(src.basic or 0)
     hra             = float(src.hra or 0)
-    da              = float(src.da or 0)
     spl             = float(src.spl or 0)
     cca             = float(src.cca or 0)
     leave_travel    = float(src.leave_travel or 0)
     other_allowance = float(src.other_allowance or 0)
 
-    # Statutory gross: leave_travel included; other_allowance excluded from PF/ESIC/PT base
-    gross    = basic + hra + da + spl + cca + leave_travel
-    pf_base  = basic + da
+    # Statutory gross: leave_travel included; other_allowance excluded from PF/ESIC/PT base.
+    # DA was folded into basic in 15.1 — PF base is `basic` only now.
+    gross    = basic + hra + spl + cca + leave_travel
+    pf_base  = basic
 
     pf_emp = min(round(pf_base * 0.12), 1800) if emp.pf_applicable else 0
     pf_ern = min(round(pf_base * 0.13), 2340) if emp.pf_applicable else 0
@@ -75,7 +76,6 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
         "month":           month,
         "basic":           basic,
         "hra":             hra,
-        "da":              da,
         "spl":             spl,
         "cca":             cca,
         "leave_travel":    leave_travel,
@@ -151,47 +151,47 @@ def process_payroll_month(
         .all()
     )
 
+    # att_status values match the DB CHECK on attendance_daily (lowercase words),
+    # which is what the biometric processor + punch endpoint write.
     def _count(status: str) -> int:
         return sum(1 for r in att_rows if r.att_status == status)
 
-    days_p   = _count("P")
-    days_a   = _count("A")
-    days_wo  = _count("WO")
-    days_cl  = _count("CL")
-    days_el  = _count("EL")
-    days_sl  = _count("SL")
-    days_h   = _count("H")
-    days_lwp = _count("LWP")
+    days_p   = _count("present")
+    days_a   = _count("absent")
+    days_wo  = _count("wo")
+    days_cl  = _count("cl")
+    days_el  = _count("el")
+    days_sl  = _count("sl")
+    days_h   = _count("holiday")
+    days_lwp = _count("lwp")
     ot_hours = sum(float(r.ot_hours or 0) for r in att_rows)
 
-    # When attendance is not yet tracked, default to full-month paid days
-    if att_rows:
-        pay_days = days_p + days_wo + days_h + days_cl + days_el + days_sl
-    else:
-        pay_days = None   # no attendance yet → proration=1.0 (pay in full)
-
-    # ── Period + working days ─────────────────────────────────────────────────
+    # ── Period + working days (stored for display; not used for proration) ─────
     location_id = data.get("location_id") or "kol"
     wdi = get_working_days_info(db, year, month, location_id)
     total_working_days = wdi["total_working_days"]
 
-    # ── Proration ─────────────────────────────────────────────────────────────
-    if pay_days is not None and total_working_days > 0:
-        proration = Decimal(pay_days) / Decimal(total_working_days)
-    elif pay_days is not None and pay_days > 0:
-        proration = Decimal(pay_days) / Decimal(26)   # industry fallback
-    else:
-        proration = Decimal("1.0")                    # no attendance → full pay
+    # ── /30 attendance-driven proration (15.1) ────────────────────────────────
+    # LOP days = absent + leave-without-pay (+ uncovered late-absences, 15.4).
+    # No attendance rows → days_a/days_lwp = 0 → factor = 1.0 → full pay.
+    divisor  = settings.PER_DAY_DIVISOR
+    lop_days = days_a + days_lwp
+    pay_days = max(0, divisor - lop_days)
+    payable_factor = Decimal(pay_days) / Decimal(divisor)
 
-    gross_d   = Decimal(str(data["gross"]))
-    net_base  = Decimal(str(data["gross"] - data["total_deduction"]))
-    prorated_net = float((net_base * proration) + Decimal(str(data["other_allowance"])))
+    # Earnings prorate by payable_factor; deductions stay on the full statutory
+    # gross (rule from 13.9). other_allowance is always paid in full.
+    stat_earnings  = Decimal(str(data["gross"]))             # basic+hra+spl+cca+lt
+    other_allow    = Decimal(str(data["other_allowance"]))
+    total_ded      = Decimal(str(data["total_deduction"]))
+    total_earnings = (stat_earnings * payable_factor) + other_allow
+    prorated_net   = float(total_earnings - total_ded)
 
     now = datetime.now(timezone.utc)
 
     att_fields = dict(
         total_days         = data["total_days"],
-        pay_days           = pay_days if pay_days is not None else data["total_days"],
+        pay_days           = pay_days,   # = PER_DAY_DIVISOR - LOP_days (floored at 0)
         days_p             = days_p or None,
         days_a             = days_a or None,
         days_wo            = days_wo or None,
@@ -207,7 +207,7 @@ def process_payroll_month(
     )
 
     if existing:
-        for field in ("basic", "hra", "da", "spl", "cca", "leave_travel", "other_allowance",
+        for field in ("basic", "hra", "spl", "cca", "leave_travel", "other_allowance",
                       "gross", "pf_emp", "pf_ern", "esic_emp", "esic_ern", "pt",
                       "loan_emi", "other_deduction"):
             setattr(existing, field, data[field])
@@ -225,7 +225,6 @@ def process_payroll_month(
             month           = month,
             basic           = data["basic"],
             hra             = data["hra"],
-            da              = data["da"],
             spl             = data["spl"],
             cca             = data["cca"],
             leave_travel    = data["leave_travel"],

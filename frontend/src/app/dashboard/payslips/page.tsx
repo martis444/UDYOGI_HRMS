@@ -20,7 +20,6 @@ interface PayslipData {
   // full monthly rates
   basic: number;
   hra: number;
-  da: number;
   spl: number;
   cca: number;
   leave_travel: number;
@@ -31,8 +30,6 @@ interface PayslipData {
   basic_amount: number;
   hra_rate: number;
   hra_amount: number;
-  da_rate: number;
-  da_amount: number;
   spl_rate: number;
   spl_amount: number;
   cca_rate: number;
@@ -250,17 +247,6 @@ function PayslipDocument({ data }: { data: PayslipData }) {
                 <td style={tdStyle}>LEAVE TRAV</td>
                 <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.lt_rate)}</td>
                 <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.lt_amount)}</td>
-                <td style={tdStyle}></td><td style={tdStyle}></td>
-              </tr>
-            )}
-
-            {/* D.A. — conditional */}
-            {data.da_rate > 0 && (
-              <tr>
-                <td style={tdStyle}></td>
-                <td style={tdStyle}>D.A.</td>
-                <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.da_rate)}</td>
-                <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.da_amount)}</td>
                 <td style={tdStyle}></td><td style={tdStyle}></td>
               </tr>
             )}

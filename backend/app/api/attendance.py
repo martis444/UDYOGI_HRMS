@@ -209,7 +209,6 @@ def commit_attendance_import(
                 month           = body.month,
                 basic           = data["basic"],
                 hra             = data["hra"],
-                da              = data["da"],
                 spl             = data["spl"],
                 cca             = data["cca"],
                 leave_travel    = data["leave_travel"],

@@ -98,7 +98,6 @@ class Employee(Base):
     ctc_annual = Column(Numeric(12, 2))
     basic = Column(Numeric(10, 2))
     hra = Column(Numeric(10, 2))
-    da = Column(Numeric(10, 2))
     spl = Column(Numeric(10, 2))
     cca = Column(Numeric(10, 2))
     leave_travel = Column(Numeric(10, 2), nullable=False, default=0)
@@ -183,7 +182,6 @@ class PayrollMonth(Base):
     month = Column(SmallInteger, nullable=False)
     basic = Column(Numeric(10, 2), nullable=False)
     hra = Column(Numeric(10, 2))
-    da = Column(Numeric(10, 2))
     spl = Column(Numeric(10, 2))
     cca = Column(Numeric(10, 2))
     leave_travel = Column(Numeric(10, 2))
@@ -436,7 +434,6 @@ class SalaryStructure(Base):
     effective_to    = Column(Date, nullable=True)   # NULL = currently active
     basic           = Column(Numeric(10, 2), nullable=False, default=0)
     hra             = Column(Numeric(10, 2), nullable=False, default=0)
-    da              = Column(Numeric(10, 2), nullable=False, default=0)
     spl             = Column(Numeric(10, 2), nullable=False, default=0)
     cca             = Column(Numeric(10, 2), nullable=False, default=0)
     leave_travel    = Column(Numeric(10, 2), nullable=False, default=0)

@@ -1,4 +1,3 @@
-import calendar
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
@@ -88,18 +87,18 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
     bank_acc_raw    = _pgp_decrypt(db, emp.bank_acc_enc) if emp else None
     bank_acc_masked = _mask_account(bank_acc_raw)
 
-    # Proration factor — 1.0 when no attendance data (factor never changes deductions)
-    total_days_calc = pm.total_days or calendar.monthrange(pm.year, pm.month)[1]
-    pay_days_val    = pm.pay_days
+    # /30 proration factor (15.1) — pay_days = PER_DAY_DIVISOR - LOP_days.
+    # 1.0 when no attendance (pay_days = full divisor). Factor never touches deductions.
+    divisor      = settings.PER_DAY_DIVISOR
+    pay_days_val = pm.pay_days
     factor = (
-        float(pay_days_val) / total_days_calc
-        if (pay_days_val is not None and total_days_calc > 0)
+        min(1.0, float(pay_days_val) / divisor)
+        if (pay_days_val is not None and divisor > 0)
         else 1.0
     )
 
     basic_r = float(pm.basic or 0)
     hra_r   = float(pm.hra or 0)
-    da_r    = float(pm.da or 0)
     spl_r   = float(pm.spl or 0)
     cca_r   = float(pm.cca or 0)
     lt_r    = float(pm.leave_travel or 0)
@@ -107,13 +106,12 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
 
     basic_amt = round(basic_r * factor)
     hra_amt   = round(hra_r   * factor)
-    da_amt    = round(da_r    * factor)
     spl_amt   = round(spl_r   * factor)
     cca_amt   = round(cca_r   * factor)
     lt_amt    = round(lt_r    * factor)
 
-    gross_rate     = int(basic_r + hra_r + da_r + spl_r + cca_r + lt_r)
-    total_earnings = basic_amt + hra_amt + da_amt + spl_amt + cca_amt + lt_amt + oa
+    gross_rate     = int(basic_r + hra_r + spl_r + cca_r + lt_r)
+    total_earnings = basic_amt + hra_amt + spl_amt + cca_amt + lt_amt + oa
 
     pf_val   = int(float(pm.pf_emp or 0))
     esic_val = int(float(pm.esic_emp or 0))
@@ -134,7 +132,6 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         # full monthly rates (for legacy callers / stats bar)
         "basic":           basic_r,
         "hra":             hra_r,
-        "da":              da_r,
         "spl":             spl_r,
         "cca":             cca_r,
         "leave_travel":    lt_r,
@@ -145,8 +142,6 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         "basic_amount":   basic_amt,
         "hra_rate":       int(hra_r),
         "hra_amount":     hra_amt,
-        "da_rate":        int(da_r),
-        "da_amount":      da_amt,
         "spl_rate":       int(spl_r),
         "spl_amount":     spl_amt,
         "cca_rate":       int(cca_r),

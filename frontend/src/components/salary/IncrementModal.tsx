@@ -10,7 +10,6 @@ const SELECT = `${INPUT} appearance-none cursor-pointer`;
 const INC_COMPONENTS = [
   { key: "basic", label: "Basic" },
   { key: "hra", label: "HRA" },
-  { key: "da", label: "DA" },
   { key: "spl", label: "SPL" },
   { key: "cca", label: "CCA" },
   { key: "leave_travel", label: "LTA" },
@@ -35,7 +34,6 @@ export default function IncrementModal({ empCode, active, onClose, onSuccess, on
   const [form, setForm] = useState<Record<IncKey, string>>({
     basic: String(active?.basic ?? ""),
     hra: String(active?.hra ?? ""),
-    da: String(active?.da ?? ""),
     spl: String(active?.spl ?? ""),
     cca: String(active?.cca ?? ""),
     leave_travel: String(active?.leave_travel ?? ""),
@@ -44,7 +42,7 @@ export default function IncrementModal({ empCode, active, onClose, onSuccess, on
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const newGross = (["basic", "hra", "da", "spl", "cca", "leave_travel"] as IncKey[]).reduce((acc, k) => {
+  const newGross = (["basic", "hra", "spl", "cca", "leave_travel"] as IncKey[]).reduce((acc, k) => {
     const v = parseFloat(form[k]);
     return acc + (isNaN(v) ? 0 : v);
   }, 0);

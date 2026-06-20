@@ -36,7 +36,7 @@ from app.services import salary_resolver
 
 router = APIRouter()
 
-_SALARY_FIELDS = ("basic", "hra", "da", "spl", "cca", "leave_travel")
+_SALARY_FIELDS = ("basic", "hra", "spl", "cca", "leave_travel")
 
 # Prominent company figures (UP000001..UP000008): name is locked and rows cannot be
 # deleted via the API. All other fields stay editable. (DB trigger is belt-and-braces.)
@@ -133,7 +133,7 @@ def _assert_entity_access(current_user: User, target_entity_id: str) -> None:
 def _build_response(emp: Employee, db: Session) -> dict:
     aadhaar_plain = _pgp_decrypt(db, emp.aadhaar_enc)
     bank_acc_plain = _pgp_decrypt(db, emp.bank_acc_enc)
-    gross = _compute_gross(emp.basic, emp.hra, emp.da, emp.spl, emp.cca, emp.leave_travel)
+    gross = _compute_gross(emp.basic, emp.hra, emp.spl, emp.cca, emp.leave_travel)
 
     return {
         "emp_code": emp.emp_code,
@@ -159,7 +159,6 @@ def _build_response(emp: Employee, db: Session) -> dict:
         "ctc_annual": emp.ctc_annual,
         "basic": emp.basic,
         "hra": emp.hra,
-        "da": emp.da,
         "spl": emp.spl,
         "cca": emp.cca,
         "leave_travel": emp.leave_travel,
@@ -328,7 +327,7 @@ def export_employees(
         "marital_status", "blood_group", "religion", "mobile", "email", "doj",
         "entity_id", "location_id", "department", "division", "designation",
         "grade", "reporting_mgr_code", "shift_id", "ctc_annual", "basic",
-        "hra", "da", "spl", "cca", "pf_applicable", "esic_applicable",
+        "hra", "spl", "cca", "pf_applicable", "esic_applicable",
         "pt_applicable", "pan", "aadhaar", "uan", "esic_no", "bank_name",
         "ifsc", "bank_branch", "present_addr", "present_city", "present_state",
         "present_pin", "perm_addr", "perm_city", "perm_state", "perm_pin", "status",
@@ -364,7 +363,6 @@ def export_employees(
             "ctc_annual": str(emp.ctc_annual) if emp.ctc_annual else "",
             "basic": str(emp.basic) if emp.basic else "",
             "hra": str(emp.hra) if emp.hra else "",
-            "da": str(emp.da) if emp.da else "",
             "spl": str(emp.spl) if emp.spl else "",
             "cca": str(emp.cca) if emp.cca else "",
             "pf_applicable": str(emp.pf_applicable) if emp.pf_applicable is not None else "",
@@ -437,7 +435,7 @@ def create_employee(
         raise HTTPException(status_code=409, detail=f"emp_code '{emp_code}' already exists")
 
     # Compute statutory gross (leave_travel included; other_allowance excluded) and esic_applicable
-    gross = _compute_gross(body.basic, body.hra, body.da, body.spl, body.cca, body.leave_travel)
+    gross = _compute_gross(body.basic, body.hra, body.spl, body.cca, body.leave_travel)
     esic_applicable = gross <= Decimal("21000")
 
     now = datetime.now(timezone.utc)
@@ -467,7 +465,6 @@ def create_employee(
         ctc_annual=body.ctc_annual,
         basic=body.basic,
         hra=body.hra,
-        da=body.da,
         spl=body.spl,
         cca=body.cca,
         leave_travel=body.leave_travel or Decimal("0"),
@@ -574,7 +571,7 @@ async def update_employee(
 
     # Recompute esic_applicable if any salary field changed
     if any(f in orm_data for f in _SALARY_FIELDS):
-        gross = _compute_gross(emp.basic, emp.hra, emp.da, emp.spl, emp.cca, emp.leave_travel)
+        gross = _compute_gross(emp.basic, emp.hra, emp.spl, emp.cca, emp.leave_travel)
         new_esic = gross <= Decimal("21000")
         old_values["esic_applicable"] = str(emp.esic_applicable)
         emp.esic_applicable = new_esic
@@ -680,7 +677,6 @@ class IncrementBody(BaseModel):
     effective_from: date            # must be the 1st of a month (pay-period start)
     basic: Optional[Decimal] = None
     hra: Optional[Decimal] = None
-    da: Optional[Decimal] = None
     spl: Optional[Decimal] = None
     cca: Optional[Decimal] = None
     leave_travel: Optional[Decimal] = None
@@ -690,14 +686,13 @@ class IncrementBody(BaseModel):
 
 def _structure_dict(s: SalaryStructure) -> dict:
     """Serialise a SalaryStructure with computed gross + derived status."""
-    gross = _compute_gross(s.basic, s.hra, s.da, s.spl, s.cca, s.leave_travel)
+    gross = _compute_gross(s.basic, s.hra, s.spl, s.cca, s.leave_travel)
     return {
         "id":              s.id,
         "effective_from":  s.effective_from,
         "effective_to":    s.effective_to,
         "basic":           s.basic,
         "hra":             s.hra,
-        "da":              s.da,
         "spl":             s.spl,
         "cca":             s.cca,
         "leave_travel":    s.leave_travel,
@@ -726,7 +721,7 @@ def apply_salary_increment(
 
     new_values = {
         c: getattr(body, c)
-        for c in ("basic", "hra", "da", "spl", "cca", "leave_travel", "other_allowance")
+        for c in ("basic", "hra", "spl", "cca", "leave_travel", "other_allowance")
     }
 
     try:
@@ -747,7 +742,7 @@ def apply_salary_increment(
 
     result = _structure_dict(new_struct)
     result["gross"] = _compute_gross(
-        new_struct.basic, new_struct.hra, new_struct.da,
+        new_struct.basic, new_struct.hra,
         new_struct.spl, new_struct.cca, new_struct.leave_travel,
     )
     return {"structure": result, "gross": result["gross"]}

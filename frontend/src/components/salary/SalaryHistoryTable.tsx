@@ -3,7 +3,7 @@
 import type { SalaryStructureRow } from "@/lib/api";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 
-const COLS = ["Effective From", "Effective To", "Basic", "HRA", "DA", "SPL", "CCA", "LTA", "Gross", "Reason", "Status"];
+const COLS = ["Effective From", "Effective To", "Basic", "HRA", "SPL", "CCA", "LTA", "Gross", "Reason", "Status"];
 const LEFT = new Set(["Effective From", "Effective To", "Reason", "Status"]);
 
 const money = (v: number) => `₹${Number(v).toLocaleString("en-IN")}`;
@@ -36,7 +36,7 @@ export default function SalaryHistoryTable({
               <tr key={s.id} className={active ? "bg-[#16A34A]/[0.05]" : ""}>
                 <td className={`py-2 px-2 border-b border-[#F0F0EE] ${active ? "text-[#1A1A1A] font-semibold" : "text-[#5A5A5A]"}`}>{s.effective_from}</td>
                 <td className={`py-2 px-2 border-b border-[#F0F0EE] ${active ? "text-[#1A1A1A]" : "text-[#5A5A5A]"}`}>{s.effective_to ?? "—"}</td>
-                {([s.basic, s.hra, s.da, s.spl, s.cca, s.leave_travel] as number[]).map((v, i) => (
+                {([s.basic, s.hra, s.spl, s.cca, s.leave_travel] as number[]).map((v, i) => (
                   <td key={i} className={`py-2 px-2 border-b border-[#F0F0EE] text-right ${active ? "text-[#1A1A1A]" : "text-[#5A5A5A]"}`}>{money(v)}</td>
                 ))}
                 <td className={`py-2 px-2 border-b border-[#F0F0EE] text-right font-bold ${active ? "text-[#1A1A1A]" : "text-[#5A5A5A]"}`}>{money(s.gross)}</td>
