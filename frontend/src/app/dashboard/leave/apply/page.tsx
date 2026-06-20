@@ -2,13 +2,13 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
+import { useLeaveBalance, invalidateLeaveBalance } from "@/store/leaveBalance";
 import {
-  apiGetLeaveBalance,
   apiApplyLeave,
   apiMyLeaveRequests,
   apiCancelLeave,
 } from "@/lib/api";
-import type { LeaveBalanceResponse, LeaveRequest } from "@/lib/api";
+import type { LeaveRequest } from "@/lib/api";
 import { CalendarDays, CheckCircle, XCircle, Clock, Ban, AlertCircle } from "lucide-react";
 import GlassCard from "@/components/ui/GlassCard";
 
@@ -47,7 +47,7 @@ function fmtDate(iso: string) {
 export default function LeavePage() {
   const { user } = useAuth();
 
-  const [balances, setBalances]     = useState<LeaveBalanceResponse | null>(null);
+  const { balances } = useLeaveBalance(user?.emp_code);   // shared cache (15.7)
   const [requests, setRequests]     = useState<LeaveRequest[]>([]);
   const [loading, setLoading]       = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -64,11 +64,7 @@ export default function LeavePage() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const [bal, reqs] = await Promise.all([
-      apiGetLeaveBalance(user.emp_code).catch(() => null),
-      apiMyLeaveRequests().catch(() => []),
-    ]);
-    setBalances(bal);
+    const reqs = await apiMyLeaveRequests().catch(() => []);
     setRequests(reqs);
     setLoading(false);
   }, [user]);
@@ -86,6 +82,7 @@ export default function LeavePage() {
       await apiApplyLeave({ leave_type: leaveType, from_date: fromDate, to_date: toDate, reason });
       setSuccess(`Leave application submitted for ${days} working day${days > 1 ? "s" : ""}.`);
       setFromDate(""); setToDate(""); setReason("");
+      if (user) invalidateLeaveBalance(user.emp_code);
       await load();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Failed to submit leave request.";
@@ -135,7 +132,8 @@ export default function LeavePage() {
             <div className="flex gap-3 flex-wrap">
               {LEAVE_TYPES.map(({ value, label, color }) => {
                 const entry = balances[value as "CL" | "SL" | "PL"];
-                const bal = entry ? Math.floor(entry.balance) : "—";
+                const alb = entry ? Math.floor(entry.alb ?? entry.balance) : 0;   // available
+                const tb  = entry ? Math.floor(entry.tb ?? entry.entitlement) : 0; // allotted
                 return (
                   <div
                     key={value}
@@ -143,8 +141,8 @@ export default function LeavePage() {
                     style={{ background: `${color}14`, border: `1px solid ${color}30` }}
                   >
                     <span className="text-xs font-bold" style={{ color }}>{value}</span>
-                    <span className="text-[#1A1A1A] text-sm font-semibold">{bal}</span>
-                    <span className="text-[#5A5A5A] text-xs">days</span>
+                    <span className="text-[#1A1A1A] text-sm font-semibold">{alb} / {tb}</span>
+                    <span className="text-[#5A5A5A] text-xs">days left</span>
                     <span className="text-[#6B6B6B] text-[10px] hidden sm:inline">{label}</span>
                   </div>
                 );

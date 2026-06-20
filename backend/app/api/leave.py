@@ -7,10 +7,24 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.dependencies import get_current_user, require_role
-from app.models.employee import AuditLog, Employee, LeaveAccrualLog, LeaveBalance, LeaveRequest, PayrollMonth, User
-from app.services.leave_engine import encash_pl, reflect_leave_on_attendance, run_grants
+from app.models.employee import AuditLog, Employee, LeaveAccrualLog, LeaveBalance, LeavePolicyConfig, LeaveRequest, PayrollMonth, User
+from app.services.leave_engine import (
+    completed_leave_years, encash_pl, get_leave_policy, materialize_all_leave_balances,
+    reflect_leave_on_attendance, resolve_leave_balance, run_grants,
+)
 
 router = APIRouter()
+
+
+def _canonical_bucket_row(db: Session, emp_code: str, leave_type: str) -> Optional[LeaveBalance]:
+    """The single current leave_balances row for a bucket (latest year).
+    resolve_leave_balance(write_through=True) must be called first to ensure it exists."""
+    return (
+        db.query(LeaveBalance)
+        .filter(LeaveBalance.emp_code == emp_code, LeaveBalance.leave_type == leave_type)
+        .order_by(LeaveBalance.year.desc())
+        .first()
+    )
 
 
 class AnnualGrantBody(BaseModel):
@@ -27,7 +41,11 @@ class EncashPLBody(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# POST /run-annual-grants  — flat annual leave grant (replaces monthly accrual)
+# POST /run-annual-grants  — manual "force refresh now" (15.7)
+# ---------------------------------------------------------------------------
+# Entitlement is now DERIVED (years × policy) and auto-materialized on read + by
+# a daily job (15.7). This endpoint is no longer the only path — it just forces a
+# resolve+write-through now for all/one entity.
 # ---------------------------------------------------------------------------
 
 @router.post("/run-annual-grants")
@@ -36,8 +54,8 @@ def run_annual_grants_batch(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("super_admin", "entity_admin")),
 ):
-    """Grant the flat annual leave quota to every active employee who has reached a
-    DOJ anniversary as of `as_of_date` (defaults to today). Idempotent per anniversary."""
+    """Force a resolve+write-through of derived leave entitlement for active
+    employees (optionally one entity). Idempotent; safe to run any time."""
     as_of = body.as_of_date or date.today()
 
     # Entity scope: non-super_admin is forced to their own entity.
@@ -64,6 +82,56 @@ def run_annual_grants_batch(
     db.commit()
 
     return {"as_of_date": as_of.isoformat(), **result}
+
+
+# ---------------------------------------------------------------------------
+# GET/PUT /policy  — the single editable leave policy (CL/SL/PL) for all entities
+# ---------------------------------------------------------------------------
+
+class LeavePolicyBody(BaseModel):
+    CL: Optional[float] = None
+    SL: Optional[float] = None
+    PL: Optional[float] = None
+
+
+@router.get("/policy")
+def get_policy(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return get_leave_policy(db)
+
+
+@router.put("/policy")
+def update_policy(
+    body: LeavePolicyBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin")),
+):
+    """Edit the policy amounts (super_admin). Changing a value changes every
+    employee's TB on the next read — no migration/endpoint run needed."""
+    old = get_leave_policy(db)
+    changes = {k: v for k, v in {"CL": body.CL, "SL": body.SL, "PL": body.PL}.items() if v is not None}
+    if not changes:
+        raise HTTPException(status_code=400, detail="Provide at least one of CL/SL/PL")
+    for lt, val in changes.items():
+        row = db.query(LeavePolicyConfig).filter(LeavePolicyConfig.leave_type == lt).first()
+        if row:
+            row.annual_days = val
+        else:
+            db.add(LeavePolicyConfig(leave_type=lt, annual_days=val))
+    db.add(AuditLog(
+        user_code=current_user.emp_code,
+        action="LEAVE_POLICY_UPDATE",
+        table_name="leave_policy",
+        record_id="policy",
+        old_values=old,
+        new_values=changes,
+    ))
+    db.commit()
+    # Re-materialize so stored entitlement + generated balance reflect the new policy.
+    materialize_all_leave_balances(db, date.today())
+    return get_leave_policy(db)
 
 
 # ---------------------------------------------------------------------------
@@ -158,32 +226,18 @@ def get_leave_balance(
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    rows = (
-        db.query(LeaveBalance)
-        .filter(LeaveBalance.emp_code == emp_code)
-        .order_by(LeaveBalance.year.desc(), LeaveBalance.leave_type)
-        .all()
-    )
-
-    # Most-recent row per bucket → TB (entitlement) / ULB (used) / ALB (balance).
-    latest: dict = {}
-    for lb in rows:  # rows are year-desc, so first seen per type is the latest
-        if lb.leave_type not in latest:
-            latest[lb.leave_type] = lb
+    # Single source of truth: derive + write-through (self-healing read).
+    today = date.today()
+    resolved = resolve_leave_balance(emp_code, today, db, write_through=True)
+    db.commit()
 
     result: dict = {}
     for lt in ("CL", "SL", "PL"):
-        lb = latest.get(lt)
-        tb  = float(lb.entitlement or 0) if lb else 0.0
-        ulb = float(lb.used or 0) if lb else 0.0
-        alb = float(lb.balance or 0) if lb else 0.0
+        r = resolved[lt.lower()]
         result[lt] = {
-            "tb": tb, "ulb": ulb, "alb": alb,
+            "tb": r["tb"], "ulb": r["ulb"], "alb": r["alb"],
             # aliases (back-compat with existing consumers)
-            "entitlement": tb, "used": ulb, "balance": alb,
-            "year": lb.year if lb else None,
-            "carried_forward": float(lb.carried_forward or 0) if lb else 0.0,
-            "encashed_ytd": float(lb.encashed_ytd or 0) if lb else 0.0,
+            "entitlement": r["tb"], "used": r["ulb"], "balance": r["alb"],
         }
 
     # Compute daily rate and cash value of saved PL (basic / 26 per day)
@@ -191,9 +245,7 @@ def get_leave_balance(
     pl_balance = result["PL"]["alb"]
     pl_cash_value = round(daily_rate * pl_balance, 2)
 
-    # Service years (PL only credits after 1 year)
-    today = date.today()
-    service_years = int(((today - emp.doj).days // 365)) if emp.doj else 0
+    service_years = completed_leave_years(emp.doj, today)
 
     result["_meta"] = {
         "category": emp.category or "staff",
@@ -374,24 +426,13 @@ def apply_leave(
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    if body.leave_type == "PL":
-        service_years = ((today - emp.doj).days // 365) if emp.doj else 0
-        if service_years < 1:
-            raise HTTPException(status_code=400, detail="PL accrual starts after 1 year of service")
+    if body.leave_type == "PL" and completed_leave_years(emp.doj, today) < 1:
+        raise HTTPException(status_code=400, detail="PL accrual starts after 1 year of service")
 
-    lb = (
-        db.query(LeaveBalance)
-        .filter(
-            LeaveBalance.emp_code == current_user.emp_code,
-            LeaveBalance.leave_type == body.leave_type,
-            LeaveBalance.year == body.from_date.year,
-        )
-        .first()
-    )
-    if not lb:
-        raise HTTPException(status_code=400, detail=f"No leave balance found for {body.leave_type}")
-
-    balance = float(lb.balance or 0)
+    # Availability from the single source of truth (derived).
+    bal = resolve_leave_balance(current_user.emp_code, today, db, write_through=True)
+    db.commit()
+    balance = bal[body.leave_type.lower()]["alb"]
     if balance < days:
         raise HTTPException(
             status_code=400,
@@ -517,15 +558,10 @@ def approve_leave(
 
     _check_entity_access(req.emp_code, current_user, db)
 
-    lb = (
-        db.query(LeaveBalance)
-        .filter(
-            LeaveBalance.emp_code == req.emp_code,
-            LeaveBalance.leave_type == req.leave_type,
-            LeaveBalance.year == req.from_date.year,
-        )
-        .first()
-    )
+    # Single source of truth: ensure the bucket row exists + entitlement is fresh,
+    # re-check availability, then debit `used` (the one mutation point).
+    resolve_leave_balance(req.emp_code, date.today(), db, write_through=True)
+    lb = _canonical_bucket_row(db, req.emp_code, req.leave_type)
     if not lb:
         raise HTTPException(status_code=400, detail="Leave balance record not found")
 
@@ -812,22 +848,10 @@ def create_leave_request(
 
     days = (body.to_date - body.from_date).days + 1
 
-    # Balance check
-    lb = (
-        db.query(LeaveBalance)
-        .filter(
-            LeaveBalance.emp_code == body.emp_code,
-            LeaveBalance.leave_type == body.leave_type,
-            LeaveBalance.year == body.from_date.year,
-        )
-        .first()
-    )
-    if not lb:
-        raise HTTPException(
-            status_code=400,
-            detail=f"No {body.leave_type} balance record found for {body.from_date.year}",
-        )
-    available = float(lb.balance or 0)
+    # Balance check via the single source of truth (derived).
+    bal = resolve_leave_balance(body.emp_code, date.today(), db, write_through=True)
+    db.commit()
+    available = bal[body.leave_type.lower()]["alb"]
     if available < days:
         raise HTTPException(
             status_code=400,
@@ -961,16 +985,9 @@ def approve_leave_request(
     if req.emp_code == current_user.emp_code:
         raise HTTPException(status_code=400, detail="Cannot approve your own leave request")
 
-    # Debit the leave balance (single source of truth = approval point, 15.3).
-    lb = (
-        db.query(LeaveBalance)
-        .filter(
-            LeaveBalance.emp_code == req.emp_code,
-            LeaveBalance.leave_type == req.leave_type,
-            LeaveBalance.year == req.from_date.year,
-        )
-        .first()
-    )
+    # Debit the leave balance (single source of truth = approval point).
+    resolve_leave_balance(req.emp_code, date.today(), db, write_through=True)
+    lb = _canonical_bucket_row(db, req.emp_code, req.leave_type)
     if not lb:
         raise HTTPException(status_code=400, detail="Leave balance record not found")
     lb.taken_ytd = float(lb.taken_ytd or 0) + float(req.days)

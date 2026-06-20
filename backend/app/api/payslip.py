@@ -14,6 +14,7 @@ from app.models.employee import (
     AuditLog, Department, Employee, Entity, LeaveBalance, Location, PayrollMonth, User,
 )
 from app.services.payroll_engine import compute_payroll, process_payroll_month
+from app.services.leave_engine import resolve_leave_balance
 from app.services.pdf_generator import generate_pdf, num_to_words
 from app.services.salary_resolver import get_structure_for_period
 
@@ -71,26 +72,11 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         db.query(Department).filter(Department.id == emp.department_id).first()
         if (emp and emp.department_id) else None
     )
-    lb_rows = (
-        db.query(LeaveBalance)
-        .filter(LeaveBalance.emp_code == pm.emp_code, LeaveBalance.year == pm.year)
-        .all()
-    )
-    leave_balances = {lb.leave_type: float(lb.balance or 0) for lb in lb_rows}
-
-    # Structured CL/SL/PL leave block — TB (entitlement) / ULB (used) / ALB (balance).
-    # Missing buckets default to 0/0/0.
-    _lb_by_type = {lb.leave_type: lb for lb in lb_rows}
-
-    def _leave_bucket(lt: str) -> dict[str, float]:
-        lb = _lb_by_type.get(lt)
-        return {
-            "tb":  float(lb.entitlement or 0) if lb else 0.0,
-            "ulb": float(lb.used or 0) if lb else 0.0,
-            "alb": float(lb.balance or 0) if lb else 0.0,
-        }
-
-    leave = {"cl": _leave_bucket("CL"), "sl": _leave_bucket("SL"), "pl": _leave_bucket("PL")}
+    # Structured CL/SL/PL leave block — TB (entitlement) / ULB (used) / ALB (available)
+    # from the single source of truth (derived; read-only here — no write-through so
+    # PDF/data generation stays side-effect-free). Matches GET /balance for the same moment.
+    leave = resolve_leave_balance(pm.emp_code, date.today(), db, write_through=False)
+    leave_balances = {lt.upper(): leave[lt]["alb"] for lt in ("cl", "sl", "pl")}
 
     # Effective-from of the salary structure that applied during this period.
     struct = get_structure_for_period(db, pm.emp_code, pm.year, pm.month)

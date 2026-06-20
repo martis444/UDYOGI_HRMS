@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict BB6AKcKkBbWdibTvSCCUlE7tY5ccOlpE0tBZiBqubgeSCoXQE5jfq2nInLWNiRK
+\restrict 8K20tJkZ94AzQgLLGrE6e3rxFPIAPdpiC3wsQwbVAHXC2zi1JaDcue1obHm336T
 
 -- Dumped from database version 18.4
 -- Dumped by pg_dump version 18.4
@@ -635,6 +635,18 @@ CREATE SEQUENCE public.leave_policies_id_seq
 --
 
 ALTER SEQUENCE public.leave_policies_id_seq OWNED BY public.leave_policies.id;
+
+
+--
+-- Name: leave_policy; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.leave_policy (
+    leave_type character varying(5) NOT NULL,
+    annual_days numeric(5,2) NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT leave_policy_leave_type_check CHECK (((leave_type)::text = ANY ((ARRAY['CL'::character varying, 'SL'::character varying, 'PL'::character varying])::text[])))
+);
 
 
 --
@@ -1507,6 +1519,14 @@ ALTER TABLE ONLY public.leave_policies
 
 
 --
+-- Name: leave_policy leave_policy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_policy
+    ADD CONSTRAINT leave_policy_pkey PRIMARY KEY (leave_type);
+
+
+--
 -- Name: leave_requests leave_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2069,5 +2089,5 @@ ALTER TABLE ONLY public.users
 -- PostgreSQL database dump complete
 --
 
-\unrestrict BB6AKcKkBbWdibTvSCCUlE7tY5ccOlpE0tBZiBqubgeSCoXQE5jfq2nInLWNiRK
+\unrestrict 8K20tJkZ94AzQgLLGrE6e3rxFPIAPdpiC3wsQwbVAHXC2zi1JaDcue1obHm336T
 

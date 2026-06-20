@@ -22,11 +22,113 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.employee import (
-    AttendanceDaily, AuditLog, Employee, LeaveAccrualLog, LeaveBalance,
+    AttendanceDaily, AuditLog, Employee, LeaveAccrualLog, LeaveBalance, LeavePolicyConfig,
 )
 
 # leave_type (CL/SL/PL) -> attendance_daily.att_status code (paid, not LOP).
 _LEAVE_TO_ATT = {"CL": "cl", "SL": "sl", "PL": "pl"}
+_BUCKETS = ("CL", "SL", "PL")
+
+
+# ---------------------------------------------------------------------------
+# Single source of truth (15.7): entitlement is DERIVED (years × policy) and
+# auto-materialized into leave_balances. Every consumer must call
+# resolve_leave_balance — never read leave_balances.entitlement directly.
+# ---------------------------------------------------------------------------
+
+def completed_leave_years(doj: date | None, as_of: date) -> int:
+    """Number of completed DOJ anniversaries on/before as_of (precise date math, not /365)."""
+    if not doj or as_of < doj:
+        return 0
+    years = as_of.year - doj.year
+    if (as_of.month, as_of.day) < (doj.month, doj.day):
+        years -= 1
+    return max(0, years)
+
+
+def get_leave_policy(db: Session) -> dict[str, float]:
+    """Policy amounts from the single leave_policy table (falls back to config)."""
+    rows = db.query(LeavePolicyConfig).all()
+    if rows:
+        return {r.leave_type: float(r.annual_days or 0) for r in rows}
+    return {k: float(v) for k, v in settings.ANNUAL_LEAVE.items()}
+
+
+def _latest_row(db: Session, emp_code: str, lt: str) -> LeaveBalance | None:
+    return (
+        db.query(LeaveBalance)
+        .filter(LeaveBalance.emp_code == emp_code, LeaveBalance.leave_type == lt)
+        .order_by(LeaveBalance.year.desc())
+        .first()
+    )
+
+
+def resolve_leave_balance(
+    emp_code: str, as_of_date: date, db: Session, write_through: bool = True
+) -> dict:
+    """
+    Canonical leave-balance resolver. Returns {cl,sl,pl: {tb, ulb, alb}} where:
+      tb (entitlement) = completed_leave_years × policy amount  (0 for workers / pre-1yr)
+      ulb (used)       = the stored cumulative `used` for that bucket
+      alb (available)  = max(tb - ulb, 0)
+
+    write_through=True keeps the stored entitlement column (and the generated
+    `balance`) fresh and ensures a CL/SL/PL row exists — self-healing on read.
+    It only flushes; the CALLER owns the commit.
+    """
+    emp = db.query(Employee).filter(Employee.emp_code == emp_code).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail=f"Employee {emp_code} not found")
+
+    years = completed_leave_years(emp.doj, as_of_date)
+    is_worker = (emp.category or "staff") == "worker"
+    policy = get_leave_policy(db)
+
+    out: dict = {}
+    changed = False
+    for lt in _BUCKETS:
+        tb = 0.0 if is_worker else round(years * policy.get(lt, 0.0), 2)
+        row = _latest_row(db, emp_code, lt)
+        ulb = float(row.used or 0) if row else 0.0
+
+        if write_through:
+            if row is None:
+                row = LeaveBalance(
+                    emp_code=emp_code, leave_type=lt, year=as_of_date.year,
+                    entitlement=Decimal(str(tb)), used=Decimal("0"),
+                    carried_forward=Decimal("0"), accrued_ytd=Decimal("0"),
+                    taken_ytd=Decimal("0"), encashed_ytd=Decimal("0"),
+                )
+                db.add(row); ulb = 0.0; changed = True
+            elif float(row.entitlement or 0) != tb:
+                row.entitlement = Decimal(str(tb)); changed = True
+
+        alb = max(round(tb - ulb, 2), 0.0)
+        out[lt.lower()] = {"tb": tb, "ulb": ulb, "alb": alb}
+
+    if write_through and changed:
+        db.flush()
+    return out
+
+
+def ensure_leave_rows(emp_code: str, db: Session, as_of_date: date | None = None) -> None:
+    """Ensure CL/SL/PL rows exist + entitlement is current. For employee create/DOJ change."""
+    resolve_leave_balance(emp_code, as_of_date or date.today(), db, write_through=True)
+
+
+def materialize_all_leave_balances(db: Session, as_of_date: date | None = None) -> int:
+    """Write-through derived entitlement for every active employee. Idempotent.
+    Used by the startup/daily refresh and the manual force-refresh endpoint."""
+    as_of = as_of_date or date.today()
+    n = 0
+    for emp in db.query(Employee).filter(Employee.status == "active").all():
+        try:
+            resolve_leave_balance(emp.emp_code, as_of, db, write_through=True)
+            n += 1
+        except Exception:  # noqa: BLE001
+            db.rollback()
+    db.commit()
+    return n
 
 
 def check_and_end_probation(emp_code: str, db: Session) -> bool:
@@ -98,109 +200,27 @@ def _get_or_create_balance(
 
 
 # ---------------------------------------------------------------------------
-# Flat annual grant
+# Manual "force refresh" (demoted from the 15.4 grant — entitlement is now
+# derived + auto-materialized; this just runs the write-through for all/one emp).
 # ---------------------------------------------------------------------------
 
-def grant_annual_leave(emp_code: str, as_of_date: date, db: Session) -> str:
-    """
-    Grant the flat annual leave quota for an employee, if a DOJ anniversary has
-    been reached as of `as_of_date`. Idempotent per anniversary (year_index).
-
-    Returns one of:
-      'granted' | 'already_granted' | 'skipped_worker'
-      | 'skipped_no_doj' | 'skipped_pre_anniversary'
-
-    Caller is responsible for db.commit().
-    """
-    emp = db.query(Employee).filter(Employee.emp_code == emp_code).first()
-    if not emp:
-        raise HTTPException(status_code=404, detail=f"Employee {emp_code} not found")
-
-    if (emp.category or "staff") == "worker":
-        return "skipped_worker"
-    if not emp.doj:
-        return "skipped_no_doj"
-
-    # year_index = completed years of service as of as_of_date. <1 → no balance yet.
-    year_index = (as_of_date - emp.doj).days // 365
-    if year_index < 1:
-        return "skipped_pre_anniversary"
-
-    tag = f"ANNUAL_GRANT:{emp_code}:{year_index}"
-    if (
-        db.query(LeaveAccrualLog)
-        .filter(LeaveAccrualLog.emp_code == emp_code, LeaveAccrualLog.reason == tag)
-        .first()
-    ):
-        return "already_granted"
-
-    store_year = as_of_date.year
-    granted: list[str] = []
-
-    for lt, quota in settings.ANNUAL_LEAVE.items():
-        # Carry forward the unused balance from the most recent prior leave-year.
-        carried = 0.0
-        if year_index > 1:
-            prior = (
-                db.query(LeaveBalance)
-                .filter(
-                    LeaveBalance.emp_code == emp_code,
-                    LeaveBalance.leave_type == lt,
-                    LeaveBalance.year < store_year,
-                )
-                .order_by(LeaveBalance.year.desc())
-                .first()
-            )
-            if prior:
-                carried = max(0.0, float(prior.entitlement or 0) - float(prior.used or 0))
-
-        lb = _get_or_create_balance(emp_code, lt, store_year, db)
-        lb.entitlement = carried + float(quota)
-        lb.used = 0
-        lb.carried_forward = carried
-        lb.accrued_ytd = float(quota)
-
-        db.add(LeaveAccrualLog(
-            emp_code=emp_code,
-            leave_type=lt,
-            accrual_date=as_of_date,
-            days_credited=float(quota),
-            reason=tag,
-        ))
-        granted.append(f"{lt}:{carried + float(quota)} (cf {carried})")
-
-    db.add(AuditLog(
-        user_code="SYSTEM",
-        action="ANNUAL_GRANT",
-        table_name="leave_balances",
-        record_id=emp_code,
-        new_values={"year_index": year_index, "store_year": store_year, "granted": granted},
-    ))
-    return "granted"
-
-
 def run_grants(as_of_date: date, db: Session, entity_id: str | None = None) -> dict:
-    """Batch grant over all active employees past their first anniversary."""
+    """Force a resolve+write-through over active employees (optionally one entity).
+    No longer the only path — reads + the daily job keep balances current too."""
     q = db.query(Employee).filter(Employee.status == "active")
     if entity_id:
         q = q.filter(Employee.entity_id == entity_id)
 
-    counters = {
-        "granted": 0, "already_granted": 0, "skipped_worker": 0,
-        "skipped_no_doj": 0, "skipped_pre_anniversary": 0,
-    }
+    refreshed = 0
     errors: list[dict] = []
     for emp in q.all():
         try:
-            result = grant_annual_leave(emp.emp_code, as_of_date, db)
-            db.flush()
-            counters[result] = counters.get(result, 0) + 1
-        except HTTPException as exc:
-            errors.append({"emp_code": emp.emp_code, "error": exc.detail})
+            resolve_leave_balance(emp.emp_code, as_of_date, db, write_through=True)
+            refreshed += 1
         except Exception as exc:  # noqa: BLE001
             errors.append({"emp_code": emp.emp_code, "error": str(exc)})
-
-    return {**counters, "errors": errors}
+    db.commit()
+    return {"refreshed": refreshed, "errors": errors}
 
 
 # ---------------------------------------------------------------------------

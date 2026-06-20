@@ -1,18 +1,18 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useAuth, isAdminRole, isEmployee } from "@/lib/auth";
 import { useEntityStore, ENTITIES } from "@/store/entity";
+import { useLeaveBalance, invalidateLeaveBalance } from "@/store/leaveBalance";
 import {
   apiGetEmployees,
-  apiGetLeaveBalance,
   apiApplyLeave,
   apiPendingLeaveCount,
   apiGetTodayAttendance,
   apiPunch,
   apiMyLeaveRequests,
 } from "@/lib/api";
-import type { LeaveBalanceResponse, TodayAttendance, LeaveRequest } from "@/lib/api";
+import type { TodayAttendance, LeaveRequest } from "@/lib/api";
 import {
   Users,
   FileText,
@@ -246,7 +246,7 @@ function PunchCard() {
 // ─── Leave apply card (employee self-service) ─────────────────────────────────
 
 function LeaveApplyCard({ empCode, onApplied }: { empCode: string; onApplied?: () => void }) {
-  const [balances, setBalances]     = useState<LeaveBalanceResponse | null>(null);
+  const { balances } = useLeaveBalance(empCode);   // shared cache (15.7)
   const [leaveType, setLeaveType]   = useState("CL");
   const [fromDate, setFromDate]     = useState("");
   const [toDate, setToDate]         = useState("");
@@ -256,12 +256,6 @@ function LeaveApplyCard({ empCode, onApplied }: { empCode: string; onApplied?: (
 
   const today = new Date().toISOString().split("T")[0];
   const days  = workingDays(fromDate, toDate);
-
-  const load = useCallback(() => {
-    apiGetLeaveBalance(empCode).then(setBalances).catch(() => {});
-  }, [empCode]);
-
-  useEffect(() => { load(); }, [load]);
 
   const meta        = balances?._meta;
   const isWorker    = meta?.category === "worker";
@@ -276,7 +270,7 @@ function LeaveApplyCard({ empCode, onApplied }: { empCode: string; onApplied?: (
       await apiApplyLeave({ leave_type: leaveType, from_date: fromDate, to_date: toDate, reason });
       setStatus({ ok: true, msg: `Applied for ${days} working day${days > 1 ? "s" : ""}. Awaiting approval.` });
       setFromDate(""); setToDate(""); setReason("");
-      load();
+      invalidateLeaveBalance(empCode);
       onApplied?.();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Failed to submit.";
@@ -312,7 +306,8 @@ function LeaveApplyCard({ empCode, onApplied }: { empCode: string; onApplied?: (
         <div className="flex gap-2 mb-4 flex-wrap">
           {LEAVE_TYPES.map(({ value, color }) => {
             const entry = balances[value as "CL" | "SL" | "PL"];
-            const bal   = entry ? Math.floor(entry.balance) : 0;
+            const alb = entry ? Math.floor(entry.alb ?? entry.balance) : 0;   // available
+            const tb  = entry ? Math.floor(entry.tb ?? entry.entitlement) : 0; // allotted total
             const isSelected = leaveType === value;
             return (
               <button
@@ -327,8 +322,8 @@ function LeaveApplyCard({ empCode, onApplied }: { empCode: string; onApplied?: (
                 }
               >
                 {value}
-                <span className={`font-bold ${isSelected ? "text-white" : "text-[#1A1A1A]"}`}>{bal}</span>
-                <span className={`${isSelected ? "text-white/70" : "text-[#6B6B6B]"}`}>days</span>
+                <span className={`font-bold ${isSelected ? "text-white" : "text-[#1A1A1A]"}`}>{alb}</span>
+                <span className={`${isSelected ? "text-white/70" : "text-[#6B6B6B]"}`}>/ {tb}</span>
               </button>
             );
           })}

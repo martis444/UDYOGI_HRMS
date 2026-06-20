@@ -339,6 +339,17 @@ class LeaveBalance(Base):
     employee = relationship("Employee")
 
 
+class LeavePolicyConfig(Base):
+    """Single editable policy set (CL/SL/PL) for all entities (15.7).
+    annual_days is the per-leave-year quota; entitlement = years_of_service × this.
+    (Distinct from the legacy per-entity `leave_policies` table / LeavePolicy model.)"""
+    __tablename__ = "leave_policy"
+
+    leave_type  = Column(String(5), primary_key=True)
+    annual_days = Column(Numeric(5, 2), nullable=False)
+    updated_at  = Column(DateTime(timezone=True), server_default=sa_text("now()"))
+
+
 class LeaveRequest(Base):
     __tablename__ = "leave_requests"
 

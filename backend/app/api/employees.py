@@ -33,6 +33,7 @@ from app.services.import_service import (
 )
 from app.services.increment_service import apply_increment
 from app.services import salary_resolver
+from app.services.leave_engine import ensure_leave_rows
 
 router = APIRouter()
 
@@ -518,6 +519,9 @@ def create_employee(
            new_values=audit_body, ip=ip)
 
     db.commit()
+    # Ensure CL/SL/PL leave rows exist (entitlement 0 until the first anniversary).
+    ensure_leave_rows(emp_code, db)
+    db.commit()
     db.refresh(emp)
     return EmployeeResponse(**_build_response(emp, db))
 
@@ -582,6 +586,10 @@ async def update_employee(
            old_values=old_values, new_values=audit_new, ip=ip)
 
     db.commit()
+    # DOJ change shifts years-of-service → re-materialize derived entitlement.
+    if "doj" in orm_data:
+        ensure_leave_rows(emp_code, db)
+        db.commit()
     db.refresh(emp)
     return EmployeeResponse(**_build_response(emp, db))
 

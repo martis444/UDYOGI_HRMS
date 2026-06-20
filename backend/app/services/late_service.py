@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.employee import AttendanceDaily, LeaveAccrualLog, LeaveBalance
+from app.services.leave_engine import resolve_leave_balance
 
 _BUCKETS = ("CL", "SL", "PL")
 
@@ -88,14 +89,15 @@ def compute_late_effects(
     ):
         prior[log.leave_type] = prior.get(log.leave_type, 0.0) + float(log.days_credited or 0)
 
-    # Available to cover = current balance + this period's prior cover (un-apply it
-    # so the recompute is stable / idempotent).
+    # Available to cover = derived available (single source of truth) + this
+    # period's prior cover (un-apply it so the recompute is stable / idempotent).
+    # resolve also ensures the CL/SL/PL rows exist + entitlement is fresh.
+    resolved = resolve_leave_balance(emp_code, end, db, write_through=True)
     bal_rows = {lt: _latest_balance(db, emp_code, lt) for lt in _BUCKETS}
     available: dict[str, float] = {}
     for lt in _BUCKETS:
-        lb = bal_rows[lt]
-        bal = (float(lb.entitlement or 0) - float(lb.used or 0)) if lb else 0.0
-        available[lt] = max(0.0, bal + prior.get(lt, 0.0))
+        alb = resolved[lt.lower()]["alb"]  # = tb - used (used incl. prior cover)
+        available[lt] = max(0.0, alb + prior.get(lt, 0.0))
 
     # Greedy cover: highest available bucket first, spill to next-highest.
     remaining = absent_from_late
