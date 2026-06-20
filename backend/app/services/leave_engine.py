@@ -22,7 +22,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.employee import (
-    AttendanceDaily, AuditLog, Employee, LeaveAccrualLog, LeaveBalance, LeavePolicyConfig,
+    AttendanceDaily, AuditLog, Employee, LeaveAccrualLog, LeaveBalance,
+    LeavePolicyConfig, LeaveRequest,
 )
 
 # leave_type (CL/SL/PL) -> attendance_daily.att_status code (paid, not LOP).
@@ -63,6 +64,45 @@ def _latest_row(db: Session, emp_code: str, lt: str) -> LeaveBalance | None:
     )
 
 
+def derived_used(db: Session, emp_code: str) -> dict[str, float]:
+    """`used` is DERIVED (15.7-style self-correcting), from the two authoritative
+    leave-consumption sources, so it can never drift from reality:
+      1. leave actually taken  = attendance_daily rows with att_status cl/sl/pl
+         (written by leave approval, 15.3) — Sundays already excluded.
+      2. leave spent covering late-coming = the LATE_COVER ledger (15.4) in
+         leave_accrual_log.
+    """
+    used = {"CL": 0.0, "SL": 0.0, "PL": 0.0}
+    for code, lt in (("cl", "CL"), ("sl", "SL"), ("pl", "PL")):
+        used[lt] += float(
+            db.query(AttendanceDaily)
+            .filter(AttendanceDaily.emp_code == emp_code, AttendanceDaily.att_status == code)
+            .count()
+        )
+    for log in (
+        db.query(LeaveAccrualLog)
+        .filter(LeaveAccrualLog.emp_code == emp_code, LeaveAccrualLog.reason.like("LATE_COVER:%"))
+        .all()
+    ):
+        if log.leave_type in used:
+            used[log.leave_type] += float(log.days_credited or 0)
+    return used
+
+
+def reflect_all_approved_leaves(emp_code: str, db: Session) -> int:
+    """Ensure every APPROVED leave_request is reflected onto the attendance sheet
+    (idempotent). Backfills historical approvals that predate the reflection logic.
+    Returns the number of requests processed."""
+    reqs = (
+        db.query(LeaveRequest)
+        .filter(LeaveRequest.emp_code == emp_code, LeaveRequest.status == "approved")
+        .all()
+    )
+    for req in reqs:
+        reflect_leave_on_attendance(req, db)
+    return len(reqs)
+
+
 def resolve_leave_balance(
     emp_code: str, as_of_date: date, db: Session, write_through: bool = True
 ) -> dict:
@@ -83,25 +123,32 @@ def resolve_leave_balance(
     years = completed_leave_years(emp.doj, as_of_date)
     is_worker = (emp.category or "staff") == "worker"
     policy = get_leave_policy(db)
+    used_map = derived_used(db, emp_code)   # used is derived too (self-correcting)
 
     out: dict = {}
     changed = False
     for lt in _BUCKETS:
         tb = 0.0 if is_worker else round(years * policy.get(lt, 0.0), 2)
+        ulb = round(used_map.get(lt, 0.0), 2)
         row = _latest_row(db, emp_code, lt)
-        ulb = float(row.used or 0) if row else 0.0
 
         if write_through:
             if row is None:
                 row = LeaveBalance(
                     emp_code=emp_code, leave_type=lt, year=as_of_date.year,
-                    entitlement=Decimal(str(tb)), used=Decimal("0"),
+                    entitlement=Decimal(str(tb)), used=Decimal(str(ulb)),
                     carried_forward=Decimal("0"), accrued_ytd=Decimal("0"),
                     taken_ytd=Decimal("0"), encashed_ytd=Decimal("0"),
                 )
-                db.add(row); ulb = 0.0; changed = True
-            elif float(row.entitlement or 0) != tb:
-                row.entitlement = Decimal(str(tb)); changed = True
+                db.add(row); changed = True
+            else:
+                if float(row.entitlement or 0) != tb:
+                    row.entitlement = Decimal(str(tb)); changed = True
+                if float(row.used or 0) != ulb:
+                    row.used = Decimal(str(ulb)); changed = True
+            # keep taken_ytd (admin tracker display) in sync with derived used
+            if row is not None and float(row.taken_ytd or 0) != ulb:
+                row.taken_ytd = Decimal(str(ulb)); changed = True
 
         alb = max(round(tb - ulb, 2), 0.0)
         out[lt.lower()] = {"tb": tb, "ulb": ulb, "alb": alb}
@@ -123,6 +170,9 @@ def materialize_all_leave_balances(db: Session, as_of_date: date | None = None) 
     n = 0
     for emp in db.query(Employee).filter(Employee.status == "active").all():
         try:
+            # Reflect approved leaves onto the attendance sheet (backfills historical
+            # approvals), then derive entitlement + used. Both self-correcting.
+            reflect_all_approved_leaves(emp.emp_code, db)
             resolve_leave_balance(emp.emp_code, as_of, db, write_through=True)
             n += 1
         except Exception:  # noqa: BLE001

@@ -93,10 +93,9 @@ def compute_late_effects(
     # period's prior cover (un-apply it so the recompute is stable / idempotent).
     # resolve also ensures the CL/SL/PL rows exist + entitlement is fresh.
     resolved = resolve_leave_balance(emp_code, end, db, write_through=True)
-    bal_rows = {lt: _latest_balance(db, emp_code, lt) for lt in _BUCKETS}
     available: dict[str, float] = {}
     for lt in _BUCKETS:
-        alb = resolved[lt.lower()]["alb"]  # = tb - used (used incl. prior cover)
+        alb = resolved[lt.lower()]["alb"]  # = tb - used (used incl. prior cover via ledger)
         available[lt] = max(0.0, alb + prior.get(lt, 0.0))
 
     # Greedy cover: highest available bucket first, spill to next-highest.
@@ -111,12 +110,9 @@ def compute_late_effects(
             remaining -= take
     uncovered_days = round(max(0.0, remaining), 2)
 
-    # Apply only the delta to leave_balances.used, then rewrite the cover ledger.
-    for lt in _BUCKETS:
-        delta = desired[lt] - prior.get(lt, 0.0)
-        if delta and bal_rows[lt] is not None:
-            bal_rows[lt].used = float(bal_rows[lt].used or 0) + delta
-
+    # Rewrite the cover ledger (LATE_COVER) — the authoritative record of leave spent
+    # covering late-coming. `used` is DERIVED from this ledger (+ attendance), so it is
+    # NOT mutated directly here (15.7/fix).
     db.query(LeaveAccrualLog).filter(
         LeaveAccrualLog.emp_code == emp_code, LeaveAccrualLog.reason == tag
     ).delete()

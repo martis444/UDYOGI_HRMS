@@ -558,24 +558,15 @@ def approve_leave(
 
     _check_entity_access(req.emp_code, current_user, db)
 
-    # Single source of truth: ensure the bucket row exists + entitlement is fresh,
-    # re-check availability, then debit `used` (the one mutation point).
-    resolve_leave_balance(req.emp_code, date.today(), db, write_through=True)
-    lb = _canonical_bucket_row(db, req.emp_code, req.leave_type)
-    if not lb:
-        raise HTTPException(status_code=400, detail="Leave balance record not found")
-
-    lb.taken_ytd = float(lb.taken_ytd or 0) + float(req.days)
-    lb.used = float(lb.used or 0) + float(req.days)
-    # balance is GENERATED ALWAYS AS (entitlement - used) — never write it directly
-
     req.status = "approved"
     req.approved_by = current_user.emp_code
     req.approved_at = datetime.now(timezone.utc)
 
-    # Reflect the leave onto the attendance sheet (paid days; 26th-cycle routing
-    # is handled by the payroll engine's attendance window).
+    # Reflect onto the attendance sheet FIRST (authoritative paid days; 26th-cycle
+    # routing handled by the engine window), THEN derive `used` from it (15.7-style
+    # self-correcting — `used` is no longer incremented by hand here).
     days_written = reflect_leave_on_attendance(req, db)
+    resolve_leave_balance(req.emp_code, date.today(), db, write_through=True)
 
     db.add(AuditLog(
         user_code=current_user.emp_code,
@@ -985,14 +976,6 @@ def approve_leave_request(
     if req.emp_code == current_user.emp_code:
         raise HTTPException(status_code=400, detail="Cannot approve your own leave request")
 
-    # Debit the leave balance (single source of truth = approval point).
-    resolve_leave_balance(req.emp_code, date.today(), db, write_through=True)
-    lb = _canonical_bucket_row(db, req.emp_code, req.leave_type)
-    if not lb:
-        raise HTTPException(status_code=400, detail="Leave balance record not found")
-    lb.taken_ytd = float(lb.taken_ytd or 0) + float(req.days)
-    lb.used = float(lb.used or 0) + float(req.days)
-
     now = datetime.now(timezone.utc)
     req.status      = "approved"
     req.actioned_by = current_user.emp_code
@@ -1001,9 +984,10 @@ def approve_leave_request(
     req.approved_by = current_user.emp_code
     req.approved_at = now
 
-    # Reflect leave onto the attendance sheet as paid days (26th-cycle routing
-    # handled by the payroll engine's attendance window).
+    # Reflect onto the attendance sheet FIRST, then derive `used` from it (15.7
+    # self-correcting — no manual increment).
     days_written = reflect_leave_on_attendance(req, db)
+    resolve_leave_balance(req.emp_code, date.today(), db, write_through=True)
 
     db.add(AuditLog(
         user_code  = current_user.emp_code,
