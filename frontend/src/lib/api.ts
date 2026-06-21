@@ -100,11 +100,13 @@ export async function apiLogin(emp_code: string, password: string) {
 
 export async function apiChangePassword(
   current_password: string,
-  new_password: string
+  new_password: string,
+  confirm_password: string
 ) {
   const { data } = await api.post("/api/auth/change-password", {
     current_password,
     new_password,
+    confirm_password,
   });
   return data;
 }

@@ -153,7 +153,7 @@ export default function ChangePasswordPage() {
     setStatus("loading");
     setError("");
     try {
-      await apiChangePassword(current, next);
+      await apiChangePassword(current, next, confirm);
       const raw = localStorage.getItem("user");
       if (raw) {
         const user = JSON.parse(raw);
