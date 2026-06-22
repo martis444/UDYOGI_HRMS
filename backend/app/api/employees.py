@@ -639,10 +639,24 @@ async def bulk_import_validate(
 ):
     """
     Dry-run: parse and validate the uploaded CSV/XLSX without writing to the DB.
-    Returns {valid, invalid, total, valid_count, error_count}.
+    Returns the frontend contract: {valid, errors, total_valid, total_error}.
     """
     rows = await parse_upload_file(file)
-    return validate_import_rows(rows, db)
+    result = validate_import_rows(rows, db)
+    # validate_import_rows yields {valid, invalid, valid_count, error_count} where
+    # each invalid row is {row, data, errors:[...]}. Reshape to what the UI reads:
+    # a flat per-error list plus total_* counts.
+    errors = [
+        {"row": item["row"], "emp_code": item["data"].get("emp_code"), "error": err}
+        for item in result["invalid"]
+        for err in item["errors"]
+    ]
+    return {
+        "valid": result["valid"],
+        "errors": errors,
+        "total_valid": result["valid_count"],
+        "total_error": result["error_count"],
+    }
 
 
 @router.post("/bulk-import/commit", status_code=status.HTTP_201_CREATED)
@@ -669,12 +683,17 @@ def bulk_import_commit(
                 detail=f"Access denied for entities: {sorted(bad)}",
             )
 
-    return commit_import(
+    result = commit_import(
         valid_rows=body.rows,
         db=db,
         imported_by=current_user.emp_code,
         filename=body.filename,
     )
+    # commit_import returns {imported, codes}; the UI reads {created, message}.
+    return {
+        "created": result["imported"],
+        "message": f"{result['imported']} employee(s) created.",
+    }
 
 
 # ---------------------------------------------------------------------------
