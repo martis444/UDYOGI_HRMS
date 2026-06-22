@@ -19,6 +19,8 @@ from app.core.config import settings
 from app.core.security import hash_password
 
 _CODE_RE = re.compile(r"^(UP|US|UA|UM)\d{6}$")
+# One or more 10-digit mobile numbers, multiples separated by "/" (spaces ok).
+_MOBILE_RE = re.compile(r"^\d{10}(\s*/\s*\d{10})*$")
 
 # Map (lowercased, stripped) upload column headers → canonical model field names
 _COL_MAP: dict[str, str] = {
@@ -402,9 +404,12 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
         if not row.get("name", "").strip():
             errors.append("missing name")
 
-        # 3. mobile must be exactly 10 digits
-        if not re.match(r"^\d{10}$", row.get("mobile", "")):
+        # 3. mobile: one or more 10-digit numbers, multiples separated by "/"
+        mobile_raw = row.get("mobile", "")
+        if not _MOBILE_RE.match(mobile_raw.strip()):
             errors.append("invalid mobile")
+        else:
+            row["mobile"] = "/".join(p.strip() for p in mobile_raw.split("/"))
 
         # 4. entity_id must exist
         if row.get("entity_id", "") not in valid_entity_ids:

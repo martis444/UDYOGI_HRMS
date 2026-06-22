@@ -382,7 +382,7 @@ CREATE TABLE public.employees (
     marital_status character varying(20),
     blood_group character varying(5),
     religion character varying(30),
-    mobile character varying(15) NOT NULL,
+    mobile character varying(64) NOT NULL,
     email character varying(100),
     doj date NOT NULL,
     entity_id character varying(10) NOT NULL,

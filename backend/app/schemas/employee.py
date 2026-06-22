@@ -6,6 +6,18 @@ from typing import List, Optional
 from pydantic import BaseModel, field_validator
 
 
+# One or more 10-digit mobile numbers; multiples separated by "/" (spaces ok).
+# e.g. "9876543210" or "9876543210/9123456780/9000000001"
+_MOBILE_RE = re.compile(r"^\d{10}(\s*/\s*\d{10})*$")
+
+
+def _normalise_mobiles(v: str) -> str:
+    """Validate one-or-more 10-digit numbers and return them as 'a/b/c' (no spaces)."""
+    if not _MOBILE_RE.match(v.strip()):
+        raise ValueError("mobile must be 10 digits; separate multiple numbers with '/'")
+    return "/".join(p.strip() for p in v.split("/"))
+
+
 class EmployeeCreate(BaseModel):
     # Optional — auto-generated if blank
     emp_code: Optional[str] = None
@@ -86,9 +98,7 @@ class EmployeeCreate(BaseModel):
     @field_validator("mobile")
     @classmethod
     def validate_mobile(cls, v: str) -> str:
-        if not re.match(r"^\d{10}$", v):
-            raise ValueError("mobile must be exactly 10 digits")
-        return v
+        return _normalise_mobiles(v)
 
     @field_validator("pan")
     @classmethod
@@ -165,9 +175,9 @@ class EmployeeUpdate(BaseModel):
     @field_validator("mobile")
     @classmethod
     def validate_mobile(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and not re.match(r"^\d{10}$", v):
-            raise ValueError("mobile must be exactly 10 digits")
-        return v
+        if v is None:
+            return v
+        return _normalise_mobiles(v)
 
     @field_validator("pan")
     @classmethod
