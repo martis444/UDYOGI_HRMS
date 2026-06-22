@@ -1,0 +1,31 @@
+# Caddyfile.windows — native (no-Docker) reverse proxy for the Windows Server deploy.
+# Caddy listens on :8080 and is the single front door for office-LAN users; it
+# forwards to the backend (uvicorn) and frontend (next start) running on the SAME
+# machine via localhost. Same-origin → no CORS needed.
+#
+#   Run with:  caddy run --config Caddyfile.windows
+#
+# Differs from ./Caddyfile (which targets the Docker container hostnames
+# udyogi_backend / udyogi_frontend) only by pointing at localhost ports instead.
+
+:8080 {
+	# eSSL biometric devices push punches here -> FastAPI
+	handle /iclock/* {
+		reverse_proxy localhost:8000
+	}
+
+	# All API calls -> FastAPI (path preserved, so /api/health hits /api/health)
+	handle /api/* {
+		reverse_proxy localhost:8000
+	}
+
+	# Everything else -> Next.js
+	handle {
+		reverse_proxy localhost:3000
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
