@@ -18,6 +18,17 @@ def _normalise_mobiles(v: str) -> str:
     return "/".join(p.strip() for p in v.split("/"))
 
 
+# Map abbreviations/synonyms to the gender values the DB CHECK allows.
+_GENDER_MAP = {"m": "male", "f": "female", "o": "other"}
+
+
+def _normalise_gender(v: Optional[str]) -> Optional[str]:
+    if not isinstance(v, str):
+        return v
+    g = v.strip().lower()
+    return _GENDER_MAP.get(g, g)
+
+
 class EmployeeCreate(BaseModel):
     # Optional — auto-generated if blank
     emp_code: Optional[str] = None
@@ -114,10 +125,15 @@ class EmployeeCreate(BaseModel):
             raise ValueError("date of joining cannot be in the future")
         return v
 
-    @field_validator("gender", "marital_status", "status", "category", mode="before")
+    @field_validator("marital_status", "status", "category", mode="before")
     @classmethod
     def normalise_lowercase(cls, v: Optional[str]) -> Optional[str]:
         return v.lower() if isinstance(v, str) else v
+
+    @field_validator("gender", mode="before")
+    @classmethod
+    def normalise_gender(cls, v: Optional[str]) -> Optional[str]:
+        return _normalise_gender(v)
 
 
 class EmployeeUpdate(BaseModel):
@@ -186,10 +202,15 @@ class EmployeeUpdate(BaseModel):
             raise ValueError("PAN must match format ABCDE1234F")
         return v
 
-    @field_validator("gender", "marital_status", "status", "category", mode="before")
+    @field_validator("marital_status", "status", "category", mode="before")
     @classmethod
     def normalise_lowercase(cls, v: Optional[str]) -> Optional[str]:
         return v.lower() if isinstance(v, str) else v
+
+    @field_validator("gender", mode="before")
+    @classmethod
+    def normalise_gender(cls, v: Optional[str]) -> Optional[str]:
+        return _normalise_gender(v)
 
 
 class EmployeeListItem(BaseModel):

@@ -210,6 +210,16 @@ _COL_MAP: dict[str, str] = {
     "status": "status",
 }
 
+# Map abbreviations/synonyms to the gender values the DB CHECK allows.
+_GENDER_MAP = {
+    "m": "male",
+    "f": "female",
+    "male": "male",
+    "female": "female",
+    "other": "other",
+    "o": "other",
+}
+
 
 # ---------------------------------------------------------------------------
 # Cell-level helpers
@@ -494,9 +504,12 @@ def commit_import(
             aadhaar = row.get("aadhaar")
             bank_acc = row.get("bank_acc")
 
-            # Normalise fields with DB CHECK constraints to lowercase
+            # Normalise fields with DB CHECK constraints to lowercase.
+            # gender CHECK accepts only 'male'/'female'/'other', so map
+            # common abbreviations (m/f) and synonyms to the allowed values.
             gender_val = row.get("gender")
-            gender_val = gender_val.lower() if gender_val else None
+            gender_val = gender_val.strip().lower() if gender_val else None
+            gender_val = _GENDER_MAP.get(gender_val, gender_val)
             status_val = (row.get("status") or "active").lower()
 
             emp = Employee(
