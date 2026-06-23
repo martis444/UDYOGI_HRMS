@@ -54,7 +54,7 @@ function Steps({ current }: { current: number }) {
 // ─── CSV Template ─────────────────────────────────────────────────────────────
 
 const TEMPLATE_HEADERS = [
-  "emp_code", "legacy_code", "name", "father_name", "dob", "gender",
+  "emp_code", "legacy_code", "sap_code", "name", "father_name", "dob", "gender",
   "marital_status", "blood_group", "religion", "mobile", "email", "doj",
   "entity_id", "location_id", "department_id", "division", "designation",
   "grade_id", "shift_id", "ctc_annual", "basic", "hra", "spl", "cca",
@@ -210,6 +210,7 @@ export default function BulkImportPage() {
             <ul className="text-[11px] text-[#5A5A5A] leading-relaxed space-y-1 list-disc pl-4">
               <li><b>emp_code</b> — leave <b>blank</b>; the system auto-generates it (e.g. UP000001). Put the old/existing code in <b>legacy_code</b>.</li>
               <li><b>legacy_code</b> — the employee&apos;s previous code, e.g. <span className="font-mono">E0204</span> (optional).</li>
+              <li><b>sap_code</b> — the employee&apos;s SAP code (optional). Must be unique if filled in.</li>
               <li><b>dob, doj</b> — date as <span className="font-mono">YYYY-MM-DD</span> (e.g. 2024-03-15). Also accepted: DD/MM/YYYY, DD-MM-YYYY.</li>
               <li><b>mobile</b> — optional, 10 digits. Multiple numbers: separate with <span className="font-mono">/</span> &nbsp;e.g. <span className="font-mono">9876543210/9123456780</span>.</li>
               <li><b>entity_id</b> — one of <span className="font-mono">UPPL · USAPL · UAPL · UMPL</span>.</li>

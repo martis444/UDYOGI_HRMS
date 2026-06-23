@@ -375,6 +375,7 @@ ALTER SEQUENCE public.employee_categories_id_seq OWNED BY public.employee_catego
 CREATE TABLE public.employees (
     emp_code character varying(12) NOT NULL,
     legacy_code character varying(30),
+    sap_code character varying(30),
     name character varying(100) NOT NULL,
     father_name character varying(100),
     dob date,
@@ -1063,6 +1064,7 @@ CREATE TABLE public.users (
 CREATE VIEW public.v_employee_full AS
  SELECT e.emp_code,
     e.legacy_code,
+    e.sap_code,
     e.name,
     e.father_name,
     e.dob,
@@ -1428,6 +1430,13 @@ ALTER TABLE ONLY public.employees
 
 ALTER TABLE ONLY public.employees
     ADD CONSTRAINT employees_pkey PRIMARY KEY (emp_code);
+
+
+--
+-- Name: employees_sap_code_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX employees_sap_code_key ON public.employees USING btree (sap_code) WHERE (sap_code IS NOT NULL);
 
 
 --

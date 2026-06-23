@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import GlassCard from "@/components/ui/GlassCard";
 import Link from "next/link";
 import { useEntityStore } from "@/store/entity";
-import { apiGetEmployees, apiDownloadEmployeeExport } from "@/lib/api";
+import { apiGetEmployees, apiDownloadEmployeeExport, apiGetActiveLocations } from "@/lib/api";
 import { useAuth, isAdminRole } from "@/lib/auth";
 import {
   Users, Plus, Upload, Download, Search,
@@ -13,6 +13,7 @@ import {
 
 interface EmpItem {
   emp_code: string;
+  sap_code?: string;
   name: string;
   entity_id: string;
   location_city?: string;
@@ -55,6 +56,19 @@ function StatusBadge({ status }: { status?: string }) {
 
 const PER_PAGE = 25;
 
+// Table columns + their responsive visibility, in render order.
+const TABLE_COLS = [
+  { label: "Emp code", cls: "" },
+  { label: "SAP code", cls: "hidden sm:table-cell" },
+  { label: "Name", cls: "" },
+  { label: "Entity", cls: "hidden md:table-cell" },
+  { label: "Location", cls: "hidden lg:table-cell" },
+  { label: "Department", cls: "hidden lg:table-cell" },
+  { label: "Designation", cls: "hidden xl:table-cell" },
+  { label: "Status", cls: "" },
+  { label: "", cls: "text-right" },
+];
+
 export default function EmployeesPage() {
   const { user } = useAuth();
   const { selected: entityFilter } = useEntityStore();
@@ -64,9 +78,20 @@ export default function EmployeesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [locationFilter, setLocationFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [designationFilter, setDesignationFilter] = useState("");
+  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+
+  // Load active locations once for the Location filter dropdown.
+  useEffect(() => {
+    apiGetActiveLocations()
+      .then((d) => setLocations(d.locations ?? []))
+      .catch(() => setLocations([]));
+  }, []);
 
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
@@ -79,6 +104,9 @@ export default function EmployeesPage() {
       if (entityFilter !== "ALL") params.entity_id = entityFilter;
       if (search.trim()) params.search = search.trim();
       if (statusFilter) params.status = statusFilter;
+      if (locationFilter) params.location_id = locationFilter;
+      if (departmentFilter.trim()) params.department = departmentFilter.trim();
+      if (designationFilter.trim()) params.designation = designationFilter.trim();
 
       const data = await apiGetEmployees(params);
       setEmployees(data.items ?? []);
@@ -93,10 +121,10 @@ export default function EmployeesPage() {
     } finally {
       setLoading(false);
     }
-  }, [entityFilter, page, search, statusFilter]);
+  }, [entityFilter, page, search, statusFilter, locationFilter, departmentFilter, designationFilter]);
 
   // Reset page on filter change
-  useEffect(() => { setPage(1); }, [entityFilter, search, statusFilter]);
+  useEffect(() => { setPage(1); }, [entityFilter, search, statusFilter, locationFilter, departmentFilter, designationFilter]);
 
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
 
@@ -107,6 +135,9 @@ export default function EmployeesPage() {
       if (entityFilter !== "ALL") params.entity_id = entityFilter;
       if (statusFilter) params.status = statusFilter;
       if (search.trim()) params.search = search.trim();
+      if (locationFilter) params.location_id = locationFilter;
+      if (departmentFilter.trim()) params.department = departmentFilter.trim();
+      if (designationFilter.trim()) params.designation = designationFilter.trim();
       await apiDownloadEmployeeExport(params);
     } finally {
       setExporting(false);
@@ -163,16 +194,38 @@ export default function EmployeesPage() {
       </div>
 
       {/* Filters */}
-      <GlassCard className="p-3 flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+      <GlassCard className="p-3 flex flex-col sm:flex-row sm:flex-wrap gap-3">
+        <div className="relative flex-1 min-w-[200px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B] pointer-events-none" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name or code…"
+            placeholder="Search name, emp / legacy / SAP code…"
             className="w-full bg-white border border-[#E2E2DF] rounded-xl pl-9 pr-3 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#6B6B6B] focus:outline-none focus:border-[#E5202E] focus:ring-1 focus:ring-[#E5202E]/30"
           />
         </div>
+        <select
+          value={locationFilter}
+          onChange={(e) => setLocationFilter(e.target.value)}
+          className="bg-white border border-[#E2E2DF] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E5202E] focus:ring-1 focus:ring-[#E5202E]/30 min-h-[44px] sm:w-44"
+        >
+          <option value="">All locations</option>
+          {locations.map((l) => (
+            <option key={l.id} value={l.id}>{l.name}</option>
+          ))}
+        </select>
+        <input
+          value={departmentFilter}
+          onChange={(e) => setDepartmentFilter(e.target.value)}
+          placeholder="Department"
+          className="bg-white border border-[#E2E2DF] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#6B6B6B] focus:outline-none focus:border-[#E5202E] focus:ring-1 focus:ring-[#E5202E]/30 min-h-[44px] sm:w-40"
+        />
+        <input
+          value={designationFilter}
+          onChange={(e) => setDesignationFilter(e.target.value)}
+          placeholder="Designation"
+          className="bg-white border border-[#E2E2DF] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#6B6B6B] focus:outline-none focus:border-[#E5202E] focus:ring-1 focus:ring-[#E5202E]/30 min-h-[44px] sm:w-40"
+        />
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -191,16 +244,12 @@ export default function EmployeesPage() {
           <table className="w-full text-sm min-w-[600px]">
             <thead>
               <tr className="border-b border-[#E2E2DF] bg-[#F4F4F2]/60">
-                {["Emp code", "Name", "Entity", "Location", "Department", "Designation", "Status", ""].map((h, i) => (
+                {TABLE_COLS.map((c, i) => (
                   <th
                     key={i}
-                    className={`text-left px-4 py-3 text-[#5A5A5A] font-semibold text-[11px] uppercase tracking-wide whitespace-nowrap ${
-                      i === 3 || i === 4 ? "hidden lg:table-cell" :
-                      i === 5 ? "hidden xl:table-cell" :
-                      i === 2 ? "hidden md:table-cell" : ""
-                    } ${i === 7 ? "text-right" : ""}`}
+                    className={`text-left px-4 py-3 text-[#5A5A5A] font-semibold text-[11px] uppercase tracking-wide whitespace-nowrap ${c.cls}`}
                   >
-                    {h}
+                    {c.label}
                   </th>
                 ))}
               </tr>
@@ -208,7 +257,7 @@ export default function EmployeesPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-16 text-[#5A5A5A]">
+                  <td colSpan={TABLE_COLS.length} className="text-center py-16 text-[#5A5A5A]">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 border-2 border-[#E5202E] border-t-transparent rounded-full animate-spin" />
                       Loading…
@@ -217,7 +266,7 @@ export default function EmployeesPage() {
                 </tr>
               ) : employees.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-16">
+                  <td colSpan={TABLE_COLS.length} className="text-center py-16">
                     <div className="flex flex-col items-center gap-2">
                       <Users size={32} className="text-[#E2E2DF]" />
                       {fetchError ? (
@@ -251,6 +300,7 @@ export default function EmployeesPage() {
                           {emp.emp_code}
                         </span>
                       </td>
+                      <td className="px-4 py-3.5 text-[#5A5A5A] text-xs font-mono hidden sm:table-cell">{emp.sap_code || "—"}</td>
                       <td className="px-4 py-3.5 font-medium text-[#1A1A1A] whitespace-nowrap">{emp.name}</td>
                       <td className="px-4 py-3.5 hidden md:table-cell">
                         <span

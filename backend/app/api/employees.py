@@ -139,6 +139,7 @@ def _build_response(emp: Employee, db: Session) -> dict:
     return {
         "emp_code": emp.emp_code,
         "legacy_code": emp.legacy_code,
+        "sap_code": emp.sap_code,
         "name": emp.name,
         "father_name": emp.father_name,
         "dob": emp.dob,
@@ -229,6 +230,7 @@ def list_employees(
     entity_id: Optional[str] = None,
     location_id: Optional[str] = None,
     department: Optional[str] = None,
+    designation: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
@@ -256,9 +258,15 @@ def list_employees(
         q = q.filter(Employee.location_id == location_id)
     if status:
         q = q.filter(Employee.status == status)
+    if designation:
+        q = q.filter(Employee.designation.ilike(f"%{designation}%"))
     if search:
+        like = f"%{search}%"
         q = q.filter(
-            Employee.name.ilike(f"%{search}%") | Employee.emp_code.ilike(f"%{search}%")
+            Employee.name.ilike(like)
+            | Employee.emp_code.ilike(like)
+            | Employee.legacy_code.ilike(like)
+            | Employee.sap_code.ilike(like)
         )
     if department:
         q = q.join(Employee.department).filter(Department.name.ilike(f"%{department}%"))
@@ -269,6 +277,7 @@ def list_employees(
     items = [
         EmployeeListItem(
             emp_code=e.emp_code,
+            sap_code=e.sap_code,
             name=e.name,
             entity_id=e.entity_id,
             location_city=e.location.city if e.location else None,
@@ -288,6 +297,7 @@ def export_employees(
     entity_id: Optional[str] = None,
     location_id: Optional[str] = None,
     department: Optional[str] = None,
+    designation: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
     req: Request = None,
@@ -314,9 +324,15 @@ def export_employees(
         q = q.filter(Employee.location_id == location_id)
     if status:
         q = q.filter(Employee.status == status)
+    if designation:
+        q = q.filter(Employee.designation.ilike(f"%{designation}%"))
     if search:
+        like = f"%{search}%"
         q = q.filter(
-            Employee.name.ilike(f"%{search}%") | Employee.emp_code.ilike(f"%{search}%")
+            Employee.name.ilike(like)
+            | Employee.emp_code.ilike(like)
+            | Employee.legacy_code.ilike(like)
+            | Employee.sap_code.ilike(like)
         )
     if department:
         q = q.join(Employee.department).filter(Department.name.ilike(f"%{department}%"))
@@ -324,7 +340,7 @@ def export_employees(
     employees = q.all()
 
     headers = [
-        "emp_code", "legacy_code", "name", "father_name", "dob", "gender",
+        "emp_code", "legacy_code", "sap_code", "name", "father_name", "dob", "gender",
         "marital_status", "blood_group", "religion", "mobile", "email", "doj",
         "entity_id", "location_id", "department", "division", "designation",
         "grade", "reporting_mgr_code", "shift_id", "ctc_annual", "basic",
@@ -343,6 +359,7 @@ def export_employees(
         writer.writerow({
             "emp_code": emp.emp_code,
             "legacy_code": emp.legacy_code or "",
+            "sap_code": emp.sap_code or "",
             "name": emp.name,
             "father_name": emp.father_name or "",
             "dob": str(emp.dob) if emp.dob else "",
@@ -445,6 +462,7 @@ def create_employee(
     emp = Employee(
         emp_code=emp_code,
         legacy_code=body.legacy_code,
+        sap_code=body.sap_code,
         name=body.name,
         father_name=body.father_name,
         dob=body.dob,

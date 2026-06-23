@@ -21,7 +21,7 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Emp {
-  emp_code: string; legacy_code?: string; name: string; father_name?: string;
+  emp_code: string; legacy_code?: string; sap_code?: string; name: string; father_name?: string;
   dob?: string; gender?: string; marital_status?: string; blood_group?: string;
   religion?: string; mobile: string; email?: string; doj: string;
   entity_id: string; location_id: string; department_id?: number;
@@ -328,6 +328,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
               <InfoRow label="Religion" value={emp.religion} />
               <InfoRow label="Email" value={emp.email} />
               {emp.legacy_code && <InfoRow label="Legacy code" value={emp.legacy_code} mono />}
+              {emp.sap_code && <InfoRow label="SAP code" value={emp.sap_code} mono />}
             </div>
           </GlassCard>
 
@@ -397,8 +398,11 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
               <EditField label="Full name" required>
                 <input required value={editForm.name ?? ""} onChange={(e) => setEditField("name", e.target.value)} className={INPUT} />
               </EditField>
-              <EditField label="Mobile" required>
-                <input required value={editForm.mobile ?? ""} onChange={(e) => setEditField("mobile", e.target.value)} maxLength={10} className={INPUT} />
+              <EditField label="SAP code">
+                <input value={editForm.sap_code ?? ""} onChange={(e) => setEditField("sap_code", e.target.value)} placeholder="SAP employee code" className={INPUT} />
+              </EditField>
+              <EditField label="Mobile">
+                <input value={editForm.mobile ?? ""} onChange={(e) => setEditField("mobile", e.target.value)} maxLength={10} className={INPUT} />
               </EditField>
               <EditField label="Email">
                 <input type="email" value={editForm.email ?? ""} onChange={(e) => setEditField("email", e.target.value)} className={INPUT} />

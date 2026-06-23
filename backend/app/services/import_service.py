@@ -34,6 +34,12 @@ _COL_MAP: dict[str, str] = {
     "legacy code": "legacy_code",
     "legacy_code": "legacy_code",
     "old code": "legacy_code",
+    # sap_code
+    "sap code": "sap_code",
+    "sap_code": "sap_code",
+    "sap": "sap_code",
+    "sap id": "sap_code",
+    "sap emp code": "sap_code",
     # name
     "employee name": "name",
     "name": "name",
@@ -235,6 +241,12 @@ def _clean_legacy(val: Any) -> str | None:
     return None if s in ("", "0") else s
 
 
+def _clean_str(val: Any) -> str | None:
+    """Trimmed string, or None when blank."""
+    s = ("" if val is None else str(val)).strip()
+    return s or None
+
+
 def _strip_ws(val: Any) -> str:
     """Remove every whitespace char (incl. non-breaking/zero-width) from a cell."""
     if val is None:
@@ -351,6 +363,7 @@ def _resolve_department(db: Session, raw: Any, entity_id: str, cache: dict) -> O
 
 # Plain text columns copied through verbatim on insert/update.
 _TEXT_COLS = [
+    "sap_code",
     "name", "father_name", "marital_status", "blood_group", "religion", "email",
     "division", "designation", "reporting_mgr_code", "pan", "uan", "esic_no",
     "bank_name", "ifsc", "bank_branch", "present_addr", "present_city",
@@ -516,6 +529,14 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
     existing_legacy = {
         e.legacy_code for e in db.query(Employee.legacy_code).all() if e.legacy_code
     }
+    # sap_code / legacy_code -> emp_code, so we can match rows to employees and
+    # tell a row's own SAP code apart from a clash with a *different* employee.
+    legacy_to_code = {
+        lc: ec for ec, lc in db.query(Employee.emp_code, Employee.legacy_code).all() if lc
+    }
+    sap_to_code = {
+        sc: ec for ec, sc in db.query(Employee.emp_code, Employee.sap_code).all() if sc
+    }
 
     # Detect emp_code duplicates within the upload file
     file_codes = [r.get("emp_code", "").strip() for r in rows if r.get("emp_code", "").strip()]
@@ -525,6 +546,10 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
     # blank and "0" are placeholders that become NULL and don't conflict)
     file_legacy = [_clean_legacy(r.get("legacy_code")) for r in rows]
     dup_legacy = {c for c, n in Counter(c for c in file_legacy if c).items() if n > 1}
+
+    # Detect sap_code duplicates within the upload file
+    file_sap = [_clean_str(r.get("sap_code")) for r in rows]
+    dup_sap = {c for c, n in Counter(c for c in file_sap if c).items() if n > 1}
 
     valid: list[dict] = []
     invalid: list[dict] = []
@@ -536,15 +561,27 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
         emp_code = row.get("emp_code", "").strip()
         legacy = _clean_legacy(row.get("legacy_code"))
         row["legacy_code"] = legacy
+        sap = _clean_str(row.get("sap_code"))
+        row["sap_code"] = sap
 
         # An existing employee (matched by emp_code or legacy_code) is an UPDATE,
         # not a duplicate-error. Required fields are only enforced on new inserts;
         # for updates a blank cell means "leave unchanged" (rule 7).
-        is_update = bool(
-            (emp_code and emp_code in existing_codes)
-            or (legacy and legacy in existing_legacy)
-        )
+        match_code = None
+        if emp_code and emp_code in existing_codes:
+            match_code = emp_code
+        elif legacy and legacy in legacy_to_code:
+            match_code = legacy_to_code[legacy]
+        is_update = match_code is not None
         row["_mode"] = "update" if is_update else "insert"
+
+        # sap_code: optional, unique when present. In-file dup is an error; a DB
+        # clash is only an error if the SAP code belongs to a *different* employee.
+        if sap:
+            if sap in dup_sap:
+                errors.append({"column": "sap_code", "error": "duplicate in file"})
+            elif sap in sap_to_code and sap_to_code[sap] != match_code:
+                errors.append({"column": "sap_code", "error": "already exists in DB"})
 
         # 1. emp_code format / in-file duplicates (existing-in-DB is fine → update)
         if emp_code:
@@ -706,6 +743,7 @@ def commit_import(
             emp = Employee(
                 emp_code=emp_code,
                 legacy_code=row.get("legacy_code"),
+                sap_code=row.get("sap_code"),
                 name=row["name"].strip(),
                 father_name=row.get("father_name"),
                 dob=_row_date(row, "dob"),

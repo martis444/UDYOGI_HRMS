@@ -33,6 +33,7 @@ class EmployeeCreate(BaseModel):
     # Optional — auto-generated if blank
     emp_code: Optional[str] = None
     legacy_code: Optional[str] = None
+    sap_code: Optional[str] = None  # SAP employee code (unique when present)
 
     # Required
     name: str
@@ -137,10 +138,20 @@ class EmployeeCreate(BaseModel):
     def normalise_gender(cls, v: Optional[str]) -> Optional[str]:
         return _normalise_gender(v)
 
+    @field_validator("sap_code", "legacy_code", mode="before")
+    @classmethod
+    def blank_to_none(cls, v: Optional[str]) -> Optional[str]:
+        # Blank must be NULL so the unique-when-present index allows many blanks.
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
+
 
 class EmployeeUpdate(BaseModel):
     # All optional for partial updates. emp_code is intentionally absent.
     legacy_code: Optional[str] = None
+    sap_code: Optional[str] = None
     name: Optional[str] = None
     father_name: Optional[str] = None
     dob: Optional[date] = None
@@ -214,9 +225,19 @@ class EmployeeUpdate(BaseModel):
     def normalise_gender(cls, v: Optional[str]) -> Optional[str]:
         return _normalise_gender(v)
 
+    @field_validator("sap_code", "legacy_code", mode="before")
+    @classmethod
+    def blank_to_none(cls, v: Optional[str]) -> Optional[str]:
+        # Blank must be NULL so the unique-when-present index allows many blanks.
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
+
 
 class EmployeeListItem(BaseModel):
     emp_code: str
+    sap_code: Optional[str] = None
     name: str
     entity_id: str
     location_city: Optional[str] = None
@@ -236,6 +257,7 @@ class EmployeeListResponse(BaseModel):
 class EmployeeResponse(BaseModel):
     emp_code: str
     legacy_code: Optional[str] = None
+    sap_code: Optional[str] = None
     name: str
     father_name: Optional[str] = None
     dob: Optional[date] = None

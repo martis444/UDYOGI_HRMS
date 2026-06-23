@@ -77,6 +77,7 @@ class Employee(Base):
 
     emp_code = Column(String(12), primary_key=True)
     legacy_code = Column(String(30))
+    sap_code = Column(String(30))  # SAP employee code; unique when present
     name = Column(String(100), nullable=False)
     father_name = Column(String(100))
     dob = Column(Date)
@@ -84,7 +85,7 @@ class Employee(Base):
     marital_status = Column(String(20))
     blood_group = Column(String(5))
     religion = Column(String(30))
-    mobile = Column(String(15), nullable=False)
+    mobile = Column(String(64))  # optional; may hold several "/"-separated numbers
     email = Column(String(100))
     doj = Column(Date, nullable=False)
     entity_id = Column(String(10), ForeignKey("entities.id"), nullable=False)

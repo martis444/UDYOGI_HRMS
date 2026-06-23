@@ -25,6 +25,7 @@ router = APIRouter()
 _SALARY_FIELDS = {"basic", "hra", "spl", "cca"}
 
 ALLOWED_COLUMNS = [
+    "sap_code",
     "department_id", "grade_id", "shift_id", "designation",
     "location_id", "reporting_mgr_code", "basic", "hra",
     "spl", "cca", "ctc_annual", "bank_name", "ifsc", "bank_branch",

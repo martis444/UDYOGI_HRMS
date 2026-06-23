@@ -26,6 +26,7 @@ interface FormOptions {
 
 type FormState = {
   // Personal
+  sap_code: string;
   name: string; mobile: string; email: string; doj: string; dob: string;
   gender: string; father_name: string; marital_status: string;
   blood_group: string; religion: string;
@@ -46,6 +47,7 @@ type FormState = {
 };
 
 const EMPTY: FormState = {
+  sap_code: "",
   name: "", mobile: "", email: "", doj: "", dob: "",
   gender: "", father_name: "", marital_status: "", blood_group: "", religion: "",
   entity_id: "", location_id: "", department_id: "", designation: "", division: "",
@@ -155,7 +157,7 @@ export default function AddEmployeePage() {
       const body: Record<string, unknown> = {};
       // Map all non-empty fields
       const strFields: (keyof FormState)[] = [
-        "name", "mobile", "email", "doj", "dob", "gender", "father_name", "marital_status",
+        "sap_code", "name", "mobile", "email", "doj", "dob", "gender", "father_name", "marital_status",
         "blood_group", "religion", "entity_id", "location_id", "designation", "division",
         "reporting_mgr_code", "pan", "aadhaar", "uan", "esic_no",
         "bank_name", "bank_acc", "ifsc", "bank_branch",
@@ -229,6 +231,9 @@ export default function AddEmployeePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Full name" required>
               <input required value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="As per Aadhaar" className={INPUT} />
+            </Field>
+            <Field label="SAP code" hint="optional, unique">
+              <input value={form.sap_code} onChange={(e) => set("sap_code", e.target.value)} placeholder="SAP employee code" className={INPUT} />
             </Field>
             <Field label="Mobile" hint="optional, 10 digits, no spaces">
               <input value={form.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="9XXXXXXXXX" maxLength={10} className={INPUT} />
