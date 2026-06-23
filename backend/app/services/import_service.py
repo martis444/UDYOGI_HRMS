@@ -349,6 +349,88 @@ def _resolve_department(db: Session, raw: Any, entity_id: str, cache: dict) -> O
     return dept.id
 
 
+# Plain text columns copied through verbatim on insert/update.
+_TEXT_COLS = [
+    "name", "father_name", "marital_status", "blood_group", "religion", "email",
+    "division", "designation", "reporting_mgr_code", "pan", "uan", "esic_no",
+    "bank_name", "ifsc", "bank_branch", "present_addr", "present_city",
+    "present_state", "present_pin", "perm_addr", "perm_city", "perm_state",
+    "perm_pin",
+]
+
+
+def _present(row: dict, key: str) -> bool:
+    """True if the cell has a non-blank value (so it should be written)."""
+    v = row.get(key)
+    return v is not None and str(v).strip() != ""
+
+
+def _apply_updates(emp, row: dict, db: Session, dept_cache: dict, now: datetime) -> None:
+    """Update an existing employee from non-blank cells only (rule 7).
+
+    Never touches emp_code (immutable, rule 3). Recomputes esic_applicable
+    whenever a salary component changes (rule 4).
+    """
+    for col in _TEXT_COLS:
+        if _present(row, col):
+            v = row[col]
+            setattr(emp, col, v.strip() if isinstance(v, str) else v)
+
+    # mobile/legacy_code are normalised to a value or None during validation
+    if row.get("legacy_code") is not None:
+        emp.legacy_code = row["legacy_code"]
+    if row.get("mobile") is not None:
+        emp.mobile = row["mobile"]
+
+    if _present(row, "dob"):
+        emp.dob = _row_date(row, "dob")
+    if _present(row, "doj"):
+        emp.doj = _row_date(row, "doj")
+    if _present(row, "entity_id"):
+        emp.entity_id = row["entity_id"]
+    if _present(row, "location_id"):
+        emp.location_id = row["location_id"]
+    if _present(row, "department_id"):
+        emp.department_id = _resolve_department(db, row["department_id"], emp.entity_id, dept_cache)
+    if _present(row, "grade_id"):
+        emp.grade_id = _row_int(row, "grade_id")
+    if _present(row, "shift_id"):
+        emp.shift_id = _row_int(row, "shift_id")
+
+    if _present(row, "gender"):
+        g = str(row["gender"]).strip().lower()
+        emp.gender = _GENDER_MAP.get(g, g)
+    if _present(row, "status"):
+        emp.status = str(row["status"]).strip().lower()
+
+    salary_changed = False
+    for col in ["ctc_annual", "basic", "hra", "spl", "cca", "leave_travel", "other_allowance"]:
+        if _present(row, col):
+            setattr(emp, col, _row_dec(row, col))
+            if col in ("basic", "hra", "spl", "cca", "leave_travel"):
+                salary_changed = True
+
+    if _present(row, "pf_applicable"):
+        emp.pf_applicable = _row_bool(row, "pf_applicable")
+    if _present(row, "pt_applicable"):
+        emp.pt_applicable = _row_bool(row, "pt_applicable")
+
+    if _present(row, "aadhaar"):
+        emp.aadhaar_enc = _pgp_encrypt_local(db, str(row["aadhaar"]))
+    if _present(row, "bank_acc"):
+        emp.bank_acc_enc = _pgp_encrypt_local(db, str(row["bank_acc"]))
+
+    # rule 4: recompute ESIC eligibility on any salary change
+    if salary_changed:
+        gross = sum(
+            (v for v in [emp.basic, emp.hra, emp.spl, emp.cca, emp.leave_travel] if v),
+            Decimal("0"),
+        )
+        emp.esic_applicable = gross <= Decimal("21000")
+
+    emp.updated_at = now
+
+
 # ---------------------------------------------------------------------------
 # Code generation
 # ---------------------------------------------------------------------------
@@ -452,27 +534,32 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
         errors: list[dict] = []
         row = dict(row)  # work on a copy so normalised values don't mutate the caller's list
         emp_code = row.get("emp_code", "").strip()
+        legacy = _clean_legacy(row.get("legacy_code"))
+        row["legacy_code"] = legacy
 
-        # 1. emp_code format — blank means auto-generate, not an error
+        # An existing employee (matched by emp_code or legacy_code) is an UPDATE,
+        # not a duplicate-error. Required fields are only enforced on new inserts;
+        # for updates a blank cell means "leave unchanged" (rule 7).
+        is_update = bool(
+            (emp_code and emp_code in existing_codes)
+            or (legacy and legacy in existing_legacy)
+        )
+        row["_mode"] = "update" if is_update else "insert"
+
+        # 1. emp_code format / in-file duplicates (existing-in-DB is fine → update)
         if emp_code:
             if not _CODE_RE.match(emp_code):
                 errors.append({"column": "emp_code", "error": "invalid code format"})
             elif emp_code in dup_codes:
                 errors.append({"column": "emp_code", "error": "duplicate in file"})
-            elif emp_code in existing_codes:
-                errors.append({"column": "emp_code", "error": "already exists in DB"})
 
-        # 1b. legacy_code: optional and unique. Blank/"0" are placeholders → NULL.
-        legacy = _clean_legacy(row.get("legacy_code"))
-        row["legacy_code"] = legacy
-        if legacy:
-            if legacy in dup_legacy:
-                errors.append({"column": "legacy_code", "error": "duplicate in file"})
-            elif legacy in existing_legacy:
-                errors.append({"column": "legacy_code", "error": "already exists in DB"})
+        # 1b. legacy_code: optional. Blank/"0" → NULL. In-file dup is an error;
+        #     matching an existing employee is an update, not an error.
+        if legacy and legacy in dup_legacy:
+            errors.append({"column": "legacy_code", "error": "duplicate in file"})
 
-        # 2. name required
-        if not row.get("name", "").strip():
+        # 2. name required on insert
+        if not is_update and not row.get("name", "").strip():
             errors.append({"column": "name", "error": "missing name"})
 
         # 3. mobile: optional. When present, one or more 10-digit numbers,
@@ -487,19 +574,25 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
         else:
             row["mobile"] = mobile_clean
 
-        # 4. entity_id must exist
-        if row.get("entity_id", "") not in valid_entity_ids:
+        # 4. entity_id: required on insert; if given on update, must be valid
+        entity = row.get("entity_id", "")
+        if entity:
+            if entity not in valid_entity_ids:
+                errors.append({"column": "entity_id", "error": "unknown entity"})
+        elif not is_update:
             errors.append({"column": "entity_id", "error": "unknown entity"})
 
-        # 5. location_id must exist
-        if row.get("location_id", "") not in valid_location_ids:
+        # 5. location_id: required on insert; if given on update, must be valid
+        location = row.get("location_id", "")
+        if location:
+            if location not in valid_location_ids:
+                errors.append({"column": "location_id", "error": "unknown location"})
+        elif not is_update:
             errors.append({"column": "location_id", "error": "unknown location"})
 
-        # 6. doj: required, valid date, not future
+        # 6. doj: required on insert; if given, must be a valid past date
         doj_str = row.get("doj", "").strip()
-        if not doj_str:
-            errors.append({"column": "doj", "error": "missing doj"})
-        else:
+        if doj_str:
             try:
                 doj = _parse_date(doj_str)
                 if doj > date.today():
@@ -508,6 +601,8 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
                     row["doj"] = doj.isoformat()
             except ValueError:
                 errors.append({"column": "doj", "error": "invalid doj format"})
+        elif not is_update:
+            errors.append({"column": "doj", "error": "missing doj"})
 
         # Normalise dob to ISO string if present
         dob_str = row.get("dob", "").strip()
@@ -544,23 +639,47 @@ def commit_import(
     filename: str = "",
 ) -> dict:
     """
-    Insert all valid rows as a single atomic transaction.
-    Rolls back all inserts on any failure.
+    Apply all valid rows as a single atomic transaction: rows matching an
+    existing employee (by emp_code or legacy_code) are updated, the rest are
+    inserted. Rolls back everything on any failure.
     """
     from app.models.employee import AuditLog, Department, Employee, User
 
     now = datetime.now(timezone.utc)
     new_codes: list[str] = []
+    updated_codes: list[str] = []
 
     # (entity_id, lower(name)) -> id, so department names resolve to FK ids and
     # newly-seen departments are created once per batch, not per row.
     dept_cache = {
         (d.entity_id, d.name.lower()): d.id for d in db.query(Department).all()
     }
+    # Resolve existing employees so re-uploads update rather than collide.
+    existing_codes = {e.emp_code for e in db.query(Employee.emp_code).all()}
+    legacy_to_code = {
+        lc: ec
+        for ec, lc in db.query(Employee.emp_code, Employee.legacy_code).all()
+        if lc
+    }
 
     try:
         for row in valid_rows:
             emp_code = row.get("emp_code", "").strip()
+            legacy = _clean_legacy(row.get("legacy_code"))
+
+            # UPDATE path: row matches an existing employee.
+            match_code = None
+            if emp_code and emp_code in existing_codes:
+                match_code = emp_code
+            elif legacy and legacy in legacy_to_code:
+                match_code = legacy_to_code[legacy]
+            if match_code:
+                emp = db.query(Employee).filter(Employee.emp_code == match_code).first()
+                _apply_updates(emp, row, db, dept_cache, now)
+                updated_codes.append(match_code)
+                continue
+
+            # INSERT path.
             if not emp_code:
                 emp_code = generate_emp_code(row["entity_id"], db)
 
@@ -662,13 +781,20 @@ def commit_import(
             record_id="BULK",
             new_values={
                 "count": len(new_codes),
+                "updated": len(updated_codes),
                 "filename": filename,
                 "emp_codes": new_codes,
+                "updated_codes": updated_codes,
             },
         ))
 
         db.commit()
-        return {"imported": len(new_codes), "codes": new_codes}
+        return {
+            "imported": len(new_codes),
+            "updated": len(updated_codes),
+            "codes": new_codes,
+            "updated_codes": updated_codes,
+        }
 
     except HTTPException:
         db.rollback()

@@ -19,6 +19,7 @@ interface ValidateResult {
 
 interface CommitResult {
   created: number;
+  updated?: number;
   message?: string;
 }
 
@@ -381,7 +382,7 @@ export default function BulkImportPage() {
             </div>
             <h2 className="text-[#1A1A1A] font-semibold text-base mb-2">Ready to import</h2>
             <p className="text-[#5A5A5A] text-sm mb-1">
-              <span className="text-[#1A1A1A] font-bold">{validateResult.total_valid}</span> employees will be created.
+              <span className="text-[#1A1A1A] font-bold">{validateResult.total_valid}</span> rows will be applied (new employees created, existing ones updated).
             </p>
             {validateResult.total_error > 0 && (
               <p className="text-[#5A5A5A] text-sm">
@@ -421,7 +422,7 @@ export default function BulkImportPage() {
           <CheckCircle2 size={40} className="text-[#16A34A] mx-auto mb-4" />
           <h2 className="text-[#1A1A1A] font-semibold text-base mb-2">Import complete</h2>
           <p className="text-[#5A5A5A] text-sm">
-            <span className="text-[#16A34A] font-bold">{commitResult.created}</span> employees created successfully.
+            {commitResult.message ?? `${commitResult.created} employees created successfully.`}
           </p>
           <div className="flex items-center justify-center gap-3 mt-6">
             <button

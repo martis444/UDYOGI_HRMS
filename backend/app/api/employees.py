@@ -704,10 +704,17 @@ def bulk_import_commit(
         imported_by=current_user.emp_code,
         filename=body.filename,
     )
-    # commit_import returns {imported, codes}; the UI reads {created, message}.
+    # commit_import returns {imported, updated, ...}; the UI reads {created, updated, message}.
+    created, updated = result["imported"], result.get("updated", 0)
+    parts = []
+    if created:
+        parts.append(f"{created} created")
+    if updated:
+        parts.append(f"{updated} updated")
     return {
-        "created": result["imported"],
-        "message": f"{result['imported']} employee(s) created.",
+        "created": created,
+        "updated": updated,
+        "message": (", ".join(parts) + " employee(s)." if parts else "No changes."),
     }
 
 
