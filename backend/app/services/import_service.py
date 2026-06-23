@@ -582,10 +582,13 @@ def commit_import(
             # Flush so the new code is visible to the next generate_emp_code query
             db.flush()
 
-            mobile_last4 = row["mobile"].strip()[-4:]
+            # Default login password ends in the last 4 digits of the mobile;
+            # fall back to the emp_code when no mobile was provided.
+            mobile = row.get("mobile")
+            last4 = (mobile.strip() if mobile else emp_code)[-4:]
             db.add(User(
                 emp_code=emp_code,
-                password_hash=hash_password(f"Udyogi@{mobile_last4}"),
+                password_hash=hash_password(f"Udyogi@{last4}"),
                 role="employee",
                 is_first_login=True,
                 is_active=True,

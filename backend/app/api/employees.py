@@ -501,8 +501,9 @@ def create_employee(
     )
     db.add(emp)
 
-    # Create user account: default password = "Udyogi@" + last 4 of mobile
-    default_pw = f"Udyogi@{body.mobile[-4:]}"
+    # Create user account: default password = "Udyogi@" + last 4 of mobile,
+    # falling back to the emp_code when no mobile was provided.
+    default_pw = f"Udyogi@{(body.mobile or emp_code)[-4:]}"
     db.add(User(
         emp_code=emp_code,
         password_hash=hash_password(default_pw),
