@@ -324,6 +324,31 @@ def _row_int(row: dict, key: str) -> Optional[int]:
         return None
 
 
+def _resolve_department(db: Session, raw: Any, entity_id: str, cache: dict) -> Optional[int]:
+    """Resolve a department cell to departments.id.
+
+    HR sheets put the department *name* (e.g. "ADMIN") in this column, but the
+    DB stores an integer FK. Blank -> None; a number is used as the id directly;
+    a name is looked up (case-insensitive) within the entity and created if new.
+    """
+    from app.models.employee import Department
+
+    s = "" if raw is None else str(raw).strip()
+    if not s:
+        return None
+    if s.isdigit():
+        return int(s)
+
+    key = (entity_id, s.lower())
+    if key in cache:
+        return cache[key]
+    dept = Department(name=s, entity_id=entity_id)
+    db.add(dept)
+    db.flush()  # assign dept.id
+    cache[key] = dept.id
+    return dept.id
+
+
 # ---------------------------------------------------------------------------
 # Code generation
 # ---------------------------------------------------------------------------
@@ -522,10 +547,16 @@ def commit_import(
     Insert all valid rows as a single atomic transaction.
     Rolls back all inserts on any failure.
     """
-    from app.models.employee import AuditLog, Employee, User
+    from app.models.employee import AuditLog, Department, Employee, User
 
     now = datetime.now(timezone.utc)
     new_codes: list[str] = []
+
+    # (entity_id, lower(name)) -> id, so department names resolve to FK ids and
+    # newly-seen departments are created once per batch, not per row.
+    dept_cache = {
+        (d.entity_id, d.name.lower()): d.id for d in db.query(Department).all()
+    }
 
     try:
         for row in valid_rows:
@@ -568,7 +599,7 @@ def commit_import(
                 doj=_row_date(row, "doj"),
                 entity_id=row["entity_id"],
                 location_id=row["location_id"],
-                department_id=_row_int(row, "department_id"),
+                department_id=_resolve_department(db, row.get("department_id"), row["entity_id"], dept_cache),
                 division=row.get("division"),
                 designation=row.get("designation"),
                 grade_id=_row_int(row, "grade_id"),
