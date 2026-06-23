@@ -225,6 +225,14 @@ _GENDER_MAP = {
 # Cell-level helpers
 # ---------------------------------------------------------------------------
 
+def _strip_ws(val: Any) -> str:
+    """Remove every whitespace char (incl. non-breaking/zero-width) from a cell."""
+    if val is None:
+        return ""
+    # \s covers ASCII + unicode spaces (incl. \xa0); add zero-width chars \s misses.
+    return re.sub(r"[\s​‌‍﻿]+", "", str(val))
+
+
 def _safe_int(val: Any) -> int:
     """Convert a cell value to int, defaulting to 0 on blank/invalid."""
     try:
@@ -397,51 +405,54 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
     invalid: list[dict] = []
 
     for idx, row in enumerate(rows, start=2):  # row 1 = header
-        errors: list[str] = []
+        # Each error names the offending column so the UI report is actionable.
+        errors: list[dict] = []
         row = dict(row)  # work on a copy so normalised values don't mutate the caller's list
         emp_code = row.get("emp_code", "").strip()
 
         # 1. emp_code format — blank means auto-generate, not an error
         if emp_code:
             if not _CODE_RE.match(emp_code):
-                errors.append("invalid code format")
+                errors.append({"column": "emp_code", "error": "invalid code format"})
             elif emp_code in dup_codes:
-                errors.append("duplicate in file")
+                errors.append({"column": "emp_code", "error": "duplicate in file"})
             elif emp_code in existing_codes:
-                errors.append("already exists in DB")
+                errors.append({"column": "emp_code", "error": "already exists in DB"})
 
         # 2. name required
         if not row.get("name", "").strip():
-            errors.append("missing name")
+            errors.append({"column": "name", "error": "missing name"})
 
-        # 3. mobile: one or more 10-digit numbers, multiples separated by "/"
-        mobile_raw = row.get("mobile", "")
-        if not _MOBILE_RE.match(mobile_raw.strip()):
-            errors.append("invalid mobile")
+        # 3. mobile: one or more 10-digit numbers, multiples separated by "/".
+        #    Strip ALL whitespace first (incl. non-breaking/zero-width spaces that
+        #    sneak in from Excel) so a stray space doesn't fail an otherwise-valid cell.
+        mobile_clean = _strip_ws(row.get("mobile", ""))
+        if not _MOBILE_RE.match(mobile_clean):
+            errors.append({"column": "mobile", "error": "invalid mobile"})
         else:
-            row["mobile"] = "/".join(p.strip() for p in mobile_raw.split("/"))
+            row["mobile"] = mobile_clean
 
         # 4. entity_id must exist
         if row.get("entity_id", "") not in valid_entity_ids:
-            errors.append("unknown entity")
+            errors.append({"column": "entity_id", "error": "unknown entity"})
 
         # 5. location_id must exist
         if row.get("location_id", "") not in valid_location_ids:
-            errors.append("unknown location")
+            errors.append({"column": "location_id", "error": "unknown location"})
 
         # 6. doj: required, valid date, not future
         doj_str = row.get("doj", "").strip()
         if not doj_str:
-            errors.append("missing doj")
+            errors.append({"column": "doj", "error": "missing doj"})
         else:
             try:
                 doj = _parse_date(doj_str)
                 if doj > date.today():
-                    errors.append("doj is in the future")
+                    errors.append({"column": "doj", "error": "doj is in the future"})
                 else:
                     row["doj"] = doj.isoformat()
             except ValueError:
-                errors.append("invalid doj format")
+                errors.append({"column": "doj", "error": "invalid doj format"})
 
         # Normalise dob to ISO string if present
         dob_str = row.get("dob", "").strip()
@@ -449,7 +460,7 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
             try:
                 row["dob"] = _parse_date(dob_str).isoformat()
             except ValueError:
-                errors.append("invalid dob format")
+                errors.append({"column": "dob", "error": "invalid dob format"})
 
         if errors:
             invalid.append({"row": idx, "data": row, "errors": errors})

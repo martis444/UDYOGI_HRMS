@@ -644,10 +644,24 @@ async def bulk_import_validate(
     rows = await parse_upload_file(file)
     result = validate_import_rows(rows, db)
     # validate_import_rows yields {valid, invalid, valid_count, error_count} where
-    # each invalid row is {row, data, errors:[...]}. Reshape to what the UI reads:
-    # a flat per-error list plus total_* counts.
+    # each invalid row is {row, data, errors:[{column, error}, ...]}. Reshape to the
+    # flat per-error list the UI reads. emp_code is blank for auto-generated rows, so
+    # fall back to legacy_code/name to give the user something to find the row by.
+    def _row_label(data: dict) -> str:
+        return (
+            data.get("emp_code", "").strip()
+            or data.get("legacy_code", "").strip()
+            or data.get("name", "").strip()
+            or "—"
+        )
+
     errors = [
-        {"row": item["row"], "emp_code": item["data"].get("emp_code"), "error": err}
+        {
+            "row": item["row"],
+            "emp_code": _row_label(item["data"]),
+            "column": err["column"],
+            "error": err["error"],
+        }
         for item in result["invalid"]
         for err in item["errors"]
     ]
