@@ -649,9 +649,10 @@ async def bulk_import_validate(
     # flat per-error list the UI reads. emp_code is auto-generated (blank) on import,
     # so the report shows legacy_code — falling back to name — to identify the row.
     def _row_label(data: dict) -> str:
+        # Use `or ""` not get-default: keys may be present with value None.
         return (
-            data.get("legacy_code", "").strip()
-            or data.get("name", "").strip()
+            (data.get("legacy_code") or "").strip()
+            or (data.get("name") or "").strip()
             or "—"
         )
 
