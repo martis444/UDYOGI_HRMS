@@ -225,6 +225,16 @@ _GENDER_MAP = {
 # Cell-level helpers
 # ---------------------------------------------------------------------------
 
+def _clean_legacy(val: Any) -> str | None:
+    """Normalise legacy_code: blank or the placeholder '0' becomes None.
+
+    legacy_code is UNIQUE in the DB, so empty/placeholder values must be NULL
+    (Postgres allows many NULLs) rather than collide on a shared sentinel.
+    """
+    s = ("" if val is None else str(val)).strip()
+    return None if s in ("", "0") else s
+
+
 def _strip_ws(val: Any) -> str:
     """Remove every whitespace char (incl. non-breaking/zero-width) from a cell."""
     if val is None:
@@ -396,10 +406,18 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
     valid_entity_ids = {e.id for e in db.query(Entity).all()}
     valid_location_ids = {loc.id for loc in db.query(Location).all()}
     existing_codes = {e.emp_code for e in db.query(Employee.emp_code).all()}
+    existing_legacy = {
+        e.legacy_code for e in db.query(Employee.legacy_code).all() if e.legacy_code
+    }
 
     # Detect emp_code duplicates within the upload file
     file_codes = [r.get("emp_code", "").strip() for r in rows if r.get("emp_code", "").strip()]
     dup_codes = {c for c, n in Counter(file_codes).items() if n > 1}
+
+    # Detect legacy_code duplicates within the upload file (real codes only;
+    # blank and "0" are placeholders that become NULL and don't conflict)
+    file_legacy = [_clean_legacy(r.get("legacy_code")) for r in rows]
+    dup_legacy = {c for c, n in Counter(c for c in file_legacy if c).items() if n > 1}
 
     valid: list[dict] = []
     invalid: list[dict] = []
@@ -418,6 +436,15 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
                 errors.append({"column": "emp_code", "error": "duplicate in file"})
             elif emp_code in existing_codes:
                 errors.append({"column": "emp_code", "error": "already exists in DB"})
+
+        # 1b. legacy_code: optional and unique. Blank/"0" are placeholders → NULL.
+        legacy = _clean_legacy(row.get("legacy_code"))
+        row["legacy_code"] = legacy
+        if legacy:
+            if legacy in dup_legacy:
+                errors.append({"column": "legacy_code", "error": "duplicate in file"})
+            elif legacy in existing_legacy:
+                errors.append({"column": "legacy_code", "error": "already exists in DB"})
 
         # 2. name required
         if not row.get("name", "").strip():
