@@ -645,12 +645,11 @@ async def bulk_import_validate(
     result = validate_import_rows(rows, db)
     # validate_import_rows yields {valid, invalid, valid_count, error_count} where
     # each invalid row is {row, data, errors:[{column, error}, ...]}. Reshape to the
-    # flat per-error list the UI reads. emp_code is blank for auto-generated rows, so
-    # fall back to legacy_code/name to give the user something to find the row by.
+    # flat per-error list the UI reads. emp_code is auto-generated (blank) on import,
+    # so the report shows legacy_code — falling back to name — to identify the row.
     def _row_label(data: dict) -> str:
         return (
-            data.get("emp_code", "").strip()
-            or data.get("legacy_code", "").strip()
+            data.get("legacy_code", "").strip()
             or data.get("name", "").strip()
             or "—"
         )
@@ -658,7 +657,7 @@ async def bulk_import_validate(
     errors = [
         {
             "row": item["row"],
-            "emp_code": _row_label(item["data"]),
+            "legacy_code": _row_label(item["data"]),
             "column": err["column"],
             "error": err["error"],
         }

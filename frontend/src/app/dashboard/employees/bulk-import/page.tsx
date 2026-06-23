@@ -12,7 +12,7 @@ import {
 
 interface ValidateResult {
   valid: unknown[];
-  errors: { row?: number; emp_code?: string; column?: string; error: string }[];
+  errors: { row?: number; legacy_code?: string; column?: string; error: string }[];
   total_valid: number;
   total_error: number;
 }
@@ -330,7 +330,7 @@ export default function BulkImportPage() {
                   <thead className="sticky top-0 bg-[#F4F4F2]">
                     <tr>
                       <th className="text-left px-4 py-2 text-[#5A5A5A] font-semibold">Row</th>
-                      <th className="text-left px-4 py-2 text-[#5A5A5A] font-semibold">Emp code</th>
+                      <th className="text-left px-4 py-2 text-[#5A5A5A] font-semibold">Legacy code</th>
                       <th className="text-left px-4 py-2 text-[#5A5A5A] font-semibold">Column</th>
                       <th className="text-left px-4 py-2 text-[#5A5A5A] font-semibold">Error</th>
                     </tr>
@@ -339,7 +339,7 @@ export default function BulkImportPage() {
                     {validateResult.errors.map((e, i) => (
                       <tr key={i} className="border-t border-[#E2E2DF] hover:bg-[#F4F4F2]/40">
                         <td className="px-4 py-2 text-[#5A5A5A]">{e.row ?? "—"}</td>
-                        <td className="px-4 py-2 font-mono text-[#1A1A1A]">{e.emp_code ?? "—"}</td>
+                        <td className="px-4 py-2 font-mono text-[#1A1A1A]">{e.legacy_code ?? "—"}</td>
                         <td className="px-4 py-2 text-[#5A5A5A]">{e.column ?? "—"}</td>
                         <td className="px-4 py-2 text-[#DC2626]">{e.error}</td>
                       </tr>
