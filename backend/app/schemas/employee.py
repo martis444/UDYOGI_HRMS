@@ -36,7 +36,6 @@ class EmployeeCreate(BaseModel):
 
     # Required
     name: str
-    mobile: str
     doj: date
     entity_id: str
     location_id: str
@@ -48,6 +47,7 @@ class EmployeeCreate(BaseModel):
     marital_status: Optional[str] = None
     blood_group: Optional[str] = None
     religion: Optional[str] = None
+    mobile: Optional[str] = None
     email: Optional[str] = None
 
     # Org
@@ -108,7 +108,9 @@ class EmployeeCreate(BaseModel):
 
     @field_validator("mobile")
     @classmethod
-    def validate_mobile(cls, v: str) -> str:
+    def validate_mobile(cls, v: Optional[str]) -> Optional[str]:
+        if not v or not v.strip():
+            return None
         return _normalise_mobiles(v)
 
     @field_validator("pan")
@@ -191,8 +193,8 @@ class EmployeeUpdate(BaseModel):
     @field_validator("mobile")
     @classmethod
     def validate_mobile(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
+        if not v or not v.strip():
+            return None
         return _normalise_mobiles(v)
 
     @field_validator("pan")
@@ -241,7 +243,7 @@ class EmployeeResponse(BaseModel):
     marital_status: Optional[str] = None
     blood_group: Optional[str] = None
     religion: Optional[str] = None
-    mobile: str
+    mobile: Optional[str] = None
     email: Optional[str] = None
     doj: date
     entity_id: str

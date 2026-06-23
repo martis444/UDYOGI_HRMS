@@ -201,7 +201,7 @@ export default function BulkImportPage() {
           <div className="mt-6 p-3 rounded-xl bg-[#F4F4F2] text-left">
             <p className="text-[10px] font-semibold text-[#5A5A5A] uppercase tracking-wide mb-2">Required columns</p>
             <p className="text-[11px] text-[#5A5A5A] font-mono leading-relaxed">
-              name · mobile · doj · entity_id · location_id
+              name · doj · entity_id · location_id
             </p>
           </div>
           <div className="mt-3 p-4 rounded-xl bg-[#F4F4F2] text-left">
@@ -210,7 +210,7 @@ export default function BulkImportPage() {
               <li><b>emp_code</b> — leave <b>blank</b>; the system auto-generates it (e.g. UP000001). Put the old/existing code in <b>legacy_code</b>.</li>
               <li><b>legacy_code</b> — the employee&apos;s previous code, e.g. <span className="font-mono">E0204</span> (optional).</li>
               <li><b>dob, doj</b> — date as <span className="font-mono">YYYY-MM-DD</span> (e.g. 2024-03-15). Also accepted: DD/MM/YYYY, DD-MM-YYYY.</li>
-              <li><b>mobile</b> — 10 digits. Multiple numbers: separate with <span className="font-mono">/</span> &nbsp;e.g. <span className="font-mono">9876543210/9123456780</span>.</li>
+              <li><b>mobile</b> — optional, 10 digits. Multiple numbers: separate with <span className="font-mono">/</span> &nbsp;e.g. <span className="font-mono">9876543210/9123456780</span>.</li>
               <li><b>entity_id</b> — one of <span className="font-mono">UPPL · USAPL · UAPL · UMPL</span>.</li>
               <li><b>gender</b> — male / female. &nbsp;<b>pf_applicable / pt_applicable</b> — true / false.</li>
               <li>Leave any unknown cell <b>blank</b> — blanks are skipped, never imported as empty.</li>

@@ -230,8 +230,8 @@ export default function AddEmployeePage() {
             <Field label="Full name" required>
               <input required value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="As per Aadhaar" className={INPUT} />
             </Field>
-            <Field label="Mobile" required hint="10 digits, no spaces">
-              <input required value={form.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="9XXXXXXXXX" maxLength={10} className={INPUT} />
+            <Field label="Mobile" hint="optional, 10 digits, no spaces">
+              <input value={form.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="9XXXXXXXXX" maxLength={10} className={INPUT} />
             </Field>
             <Field label="Email">
               <input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="name@company.com" className={INPUT} />

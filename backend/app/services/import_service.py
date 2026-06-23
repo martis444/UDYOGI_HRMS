@@ -423,11 +423,14 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
         if not row.get("name", "").strip():
             errors.append({"column": "name", "error": "missing name"})
 
-        # 3. mobile: one or more 10-digit numbers, multiples separated by "/".
-        #    Strip ALL whitespace first (incl. non-breaking/zero-width spaces that
-        #    sneak in from Excel) so a stray space doesn't fail an otherwise-valid cell.
+        # 3. mobile: optional. When present, one or more 10-digit numbers,
+        #    multiples separated by "/". Strip ALL whitespace first (incl.
+        #    non-breaking/zero-width spaces from Excel) so a stray space doesn't
+        #    fail an otherwise-valid cell.
         mobile_clean = _strip_ws(row.get("mobile", ""))
-        if not _MOBILE_RE.match(mobile_clean):
+        if not mobile_clean:
+            row["mobile"] = None
+        elif not _MOBILE_RE.match(mobile_clean):
             errors.append({"column": "mobile", "error": "invalid mobile"})
         else:
             row["mobile"] = mobile_clean
@@ -533,7 +536,7 @@ def commit_import(
                 marital_status=row.get("marital_status"),
                 blood_group=row.get("blood_group"),
                 religion=row.get("religion"),
-                mobile=row["mobile"].strip(),
+                mobile=row.get("mobile"),  # already normalised (or None) in validation
                 email=row.get("email"),
                 doj=_row_date(row, "doj"),
                 entity_id=row["entity_id"],
