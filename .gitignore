@@ -23,8 +23,12 @@ __pycache__/
 !.env.example
 !backend/.env.production.template
 
-# ─── Database seed dump — contains encrypted employee PII ────
+# ─── Database seed dump / backups — contain employee PII ────
 backend/sql/init/
+backend/sql/backup_*.sql
+
+# ─── Impeccable design-hook cache (machine-local, regenerated) ─
+**/.impeccable/hook.cache.json
 
 # ─── Runtime data ───────────────────────────────────────────
 uploads/*
