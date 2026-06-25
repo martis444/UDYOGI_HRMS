@@ -344,21 +344,24 @@ def monthly_summary(
         if entity_id != my_entity:
             raise HTTPException(status_code=403, detail="Access denied")
 
-    # Self-refresh non-locked months from attendance_daily so reflected leaves
-    # (approvals, 15.9) show in the summary without a manual reprocess — same
-    # pattern as the payslip /data endpoint. Locked months stay frozen. Employees
-    # with attendance in this period's 26→25 window but no payroll row yet are
-    # processed too (covers leaves routed across the 26th into the next period).
+    # Self-refresh from attendance_daily so reflected leaves (approvals, 15.9) and
+    # biometric punches show without a manual reprocess. Locked months stay frozen.
+    #
+    # Session 18: the monthly attendance CSV import is AUTHORITATIVE. It writes
+    # aggregate day-counts straight to payroll_months but no per-day attendance_daily
+    # rows — so we must only reprocess employees who actually HAVE per-day rows in the
+    # 26→25 window (biometric / reflected leaves). Reprocessing a CSV-only month would
+    # recompute days_a=0 from the empty per-day table and wipe the uploaded attendance.
     win_start, win_end = _attendance_window(year, month)
-    existing = (
-        db.query(PayrollMonth.emp_code, PayrollMonth.status)
-        .join(Employee, Employee.emp_code == PayrollMonth.emp_code)
-        .filter(Employee.entity_id == entity_id,
-                PayrollMonth.year == year, PayrollMonth.month == month)
-        .all()
-    )
-    locked = {c for c, s in existing if s == "locked"}
-    refresh = {c for c, s in existing if s != "locked"}
+    locked = {
+        c for (c,) in (
+            db.query(PayrollMonth.emp_code)
+            .join(Employee, Employee.emp_code == PayrollMonth.emp_code)
+            .filter(Employee.entity_id == entity_id, PayrollMonth.year == year,
+                    PayrollMonth.month == month, PayrollMonth.status == "locked")
+            .all()
+        )
+    }
     att_emps = (
         db.query(AttendanceDaily.emp_code)
         .join(Employee, Employee.emp_code == AttendanceDaily.emp_code)
@@ -367,9 +370,7 @@ def monthly_summary(
         .distinct()
         .all()
     )
-    for (c,) in att_emps:
-        if c not in locked:
-            refresh.add(c)
+    refresh = {c for (c,) in att_emps if c not in locked}
     for c in refresh:
         try:
             process_payroll_month(c, year, month, db, generated_by=current_user.emp_code)
