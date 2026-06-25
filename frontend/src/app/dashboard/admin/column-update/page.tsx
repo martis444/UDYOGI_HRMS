@@ -35,6 +35,7 @@ const ALLOWED_COLUMNS: ColMeta[] = [
   { key: "ctc_annual",        label: "CTC annual",          group: "Salary" },
   { key: "bank_name",         label: "Bank name",           group: "Banking" },
   { key: "ifsc",              label: "IFSC code",           group: "Banking" },
+  { key: "confirmation_date", label: "Confirmation date",    group: "Status" },
   { key: "resignation_date",  label: "Resignation date",    group: "Status" },
 ];
 

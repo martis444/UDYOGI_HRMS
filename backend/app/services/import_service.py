@@ -206,6 +206,10 @@ _COL_MAP: dict[str, str] = {
     "cost_center_name": "cost_center_name",
     # category (director | staff | worker)
     "category": "category",
+    # confirmation date (CL/SL accrual starts after this)
+    "confirmation date": "confirmation_date",
+    "confirmation_date": "confirmation_date",
+    "date of confirmation": "confirmation_date",
     # resignation date
     "resignation date": "resignation_date",
     "resignation_date": "resignation_date",
@@ -413,6 +417,8 @@ def _apply_updates(emp, row: dict, db: Session, dept_cache: dict, now: datetime)
         emp.status = str(row["status"]).strip().lower()
     if _present(row, "category"):
         emp.category = str(row["category"]).strip().lower()
+    if _present(row, "confirmation_date"):
+        emp.confirmation_date = _row_date(row, "confirmation_date")
     if _present(row, "resignation_date"):
         emp.resignation_date = _row_date(row, "resignation_date")
 
@@ -780,6 +786,7 @@ def commit_import(
                 profit_center_name=row.get("profit_center_name"),
                 cost_center_code=row.get("cost_center_code"),
                 cost_center_name=row.get("cost_center_name"),
+                confirmation_date=_row_date(row, "confirmation_date"),
                 resignation_date=_row_date(row, "resignation_date"),
                 pf_applicable=_row_bool(row, "pf_applicable", True),
                 esic_applicable=gross <= Decimal("21000"),

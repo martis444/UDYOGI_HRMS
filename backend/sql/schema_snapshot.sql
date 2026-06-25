@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict QDtJeKLEMJ6FCvuJU8f0TBNxSYs6qafNBNIGAY01IkrUmpwir3AtobfbpX6H26X
+\restrict Wi2t8ggu3tmUoqc9f0IdlaZw04gkHcYpAxgQ787J7BpUPcBvc6WThQWZy4A6Q4S
 
 -- Dumped from database version 18.4
 -- Dumped by pg_dump version 18.4
@@ -432,6 +432,7 @@ CREATE TABLE public.employees (
     cost_center_name character varying(100),
     resignation_date date,
     retirement_date date GENERATED ALWAYS AS (((dob + '60 years'::interval))::date) STORED,
+    confirmation_date date,
     CONSTRAINT employees_category_check CHECK (((category)::text = ANY (ARRAY[('director'::character varying)::text, ('staff'::character varying)::text, ('worker'::character varying)::text]))),
     CONSTRAINT employees_gender_check CHECK (((gender)::text = ANY ((ARRAY['male'::character varying, 'female'::character varying, 'other'::character varying])::text[]))),
     CONSTRAINT employees_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'inactive'::character varying, 'exited'::character varying])::text[])))
@@ -2094,5 +2095,5 @@ ALTER TABLE ONLY public.users
 -- PostgreSQL database dump complete
 --
 
-\unrestrict QDtJeKLEMJ6FCvuJU8f0TBNxSYs6qafNBNIGAY01IkrUmpwir3AtobfbpX6H26X
+\unrestrict Wi2t8ggu3tmUoqc9f0IdlaZw04gkHcYpAxgQ787J7BpUPcBvc6WThQWZy4A6Q4S
 

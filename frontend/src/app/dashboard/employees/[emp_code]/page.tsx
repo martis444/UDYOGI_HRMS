@@ -37,6 +37,7 @@ interface Emp {
   pan?: string; aadhaar?: string; uan?: string; esic_no?: string;
   bank_name?: string; bank_acc?: string; ifsc?: string;
   present_addr?: string; perm_addr?: string;
+  confirmation_date?: string;
   status?: string; exit_date?: string; resignation_date?: string; retirement_date?: string;
   created_at?: string; updated_at?: string;
 }
@@ -351,6 +352,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
               <InfoRow label="Shift" value={String(emp.shift_id ?? "")} />
               <InfoRow label="Reporting manager" value={emp.reporting_mgr_code} mono />
               <InfoRow label="Category" value={emp.category} />
+              <InfoRow label="Confirmation date" value={emp.confirmation_date} />
               <InfoRow label="Profit center code" value={emp.profit_center_code} />
               <InfoRow label="Profit center name" value={emp.profit_center_name} />
               <InfoRow label="Cost center code" value={emp.cost_center_code} />
@@ -510,6 +512,9 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
                   <option value="inactive">Inactive</option>
                   <option value="exited">Exited</option>
                 </select>
+              </EditField>
+              <EditField label="Confirmation date (CL/SL accrual starts after)">
+                <input type="date" value={editForm.confirmation_date ?? ""} onChange={(e) => setEditField("confirmation_date", e.target.value)} className={INPUT} />
               </EditField>
               <EditField label="Resignation date">
                 <input type="date" value={editForm.resignation_date ?? ""} onChange={(e) => setEditField("resignation_date", e.target.value)} className={INPUT} />

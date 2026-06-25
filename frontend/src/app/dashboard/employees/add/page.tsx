@@ -47,7 +47,7 @@ type FormState = {
   bank_name: string; bank_acc: string; ifsc: string;
   // Address (full text only)
   present_addr: string; perm_addr: string;
-  status: string; resignation_date: string;
+  status: string; resignation_date: string; confirmation_date: string;
 };
 
 const EMPTY: FormState = {
@@ -63,7 +63,7 @@ const EMPTY: FormState = {
   pan: "", aadhaar: "", uan: "", esic_no: "",
   bank_name: "", bank_acc: "", ifsc: "",
   present_addr: "", perm_addr: "",
-  status: "active", resignation_date: "",
+  status: "active", resignation_date: "", confirmation_date: "",
 };
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
@@ -163,7 +163,7 @@ export default function AddEmployeePage() {
         "blood_group", "religion", "entity_id", "location_id", "designation", "division",
         "reporting_mgr_code", "category", "pan", "aadhaar", "uan", "esic_no",
         "bank_name", "bank_acc", "ifsc",
-        "present_addr", "perm_addr", "status", "resignation_date",
+        "present_addr", "perm_addr", "status", "resignation_date", "confirmation_date",
         "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
         "ctc_annual", "basic", "hra", "spl", "cca", "leave_travel",
         "medical", "other_earning", "other_allowance",
@@ -340,6 +340,9 @@ export default function AddEmployeePage() {
                 <option value="staff">Staff</option>
                 <option value="worker">Worker</option>
               </select>
+            </Field>
+            <Field label="Confirmation date" hint="CL/SL accrual starts after this">
+              <input type="date" value={form.confirmation_date} onChange={(e) => set("confirmation_date", e.target.value)} className={INPUT} />
             </Field>
             <Field label="Profit center code">
               <input value={form.profit_center_code} onChange={(e) => set("profit_center_code", e.target.value)} placeholder="Optional" className={INPUT} />

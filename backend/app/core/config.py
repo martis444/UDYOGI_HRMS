@@ -17,9 +17,13 @@ class Settings(BaseSettings):
     PER_DAY_DIVISOR: int = 30
     CYCLE_CUTOFF_DAY: int = 26
 
-    # Flat annual leave grant (Session 15.3) — granted on each DOJ anniversary
-    # (doj + N years), unused balance carried forward. CL/SL/PL only (EL retired).
+    # Leave (Session 15.3 / 18). Annual quota per bucket. CL/SL/PL only (EL retired).
+    #   - PL: granted after 1y DOJ, cumulative (carries forward), tb = years × quota.
+    #   - CL/SL (Session 18): do NOT carry forward. They accrue monthly (quota/12)
+    #     within the financial year, starting after confirmation_date, and reset to 0
+    #     at the start of each financial year (FINANCIAL_YEAR_START_MONTH).
     ANNUAL_LEAVE: dict[str, int] = {"CL": 10, "SL": 7, "PL": 14}
+    FINANCIAL_YEAR_START_MONTH: int = 4  # India FY: 1 April – 31 March
 
     # Late-coming penalty (Session 15.4): every N 'late' days in a pay period = 1
     # absent-equivalent, covered first by leave balance, the remainder charged as LD.

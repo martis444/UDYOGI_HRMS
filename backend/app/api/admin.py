@@ -31,14 +31,14 @@ ALLOWED_COLUMNS = [
     "spl", "cca", "ctc_annual", "leave_travel", "medical", "other_earning",
     "other_allowance", "bank_name", "ifsc",
     "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
-    "resignation_date",
+    "confirmation_date", "resignation_date",
 ]
 _ALLOWED_SET = set(ALLOWED_COLUMNS)
 _LOCKED_SET = {"emp_code", "pan", "aadhaar_enc", "bank_acc_enc", "entity_id"}
 _NUMERIC_COLS = {"basic", "hra", "spl", "cca", "ctc_annual",
                  "leave_travel", "medical", "other_earning", "other_allowance"}
 _INT_COLS = {"department_id", "grade_id", "shift_id"}
-_DATE_COLS = {"resignation_date"}
+_DATE_COLS = {"resignation_date", "confirmation_date"}
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +190,7 @@ def _build_master_row(emp: Employee, db: Session) -> dict:
         "cost_center_name": emp.cost_center_name,
         "status": emp.status,
         "exit_date": emp.exit_date,
+        "confirmation_date": emp.confirmation_date,
         "resignation_date": emp.resignation_date,
         "retirement_date": emp.retirement_date,
         "created_at": emp.created_at,
@@ -308,7 +309,7 @@ def master_data_export(
         "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
         "monthly_gross", "pf_applicable", "esic_applicable", "pt_applicable",
         "pan", "aadhaar", "uan", "esic_no", "bank_name", "ifsc",
-        "present_addr", "perm_addr", "status", "exit_date",
+        "present_addr", "perm_addr", "confirmation_date", "status", "exit_date",
         "resignation_date", "retirement_date",
     ]
 
@@ -367,6 +368,7 @@ def master_data_export(
             "ifsc": emp.ifsc or "",
             "present_addr": emp.present_addr or "",
             "perm_addr": emp.perm_addr or "",
+            "confirmation_date": str(emp.confirmation_date) if emp.confirmation_date else "",
             "status": emp.status or "",
             "exit_date": str(emp.exit_date) if emp.exit_date else "",
             "resignation_date": str(emp.resignation_date) if emp.resignation_date else "",

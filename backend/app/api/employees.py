@@ -175,6 +175,7 @@ def _build_response(emp: Employee, db: Session) -> dict:
         "category": emp.category,
         "probation_days": emp.probation_days,
         "probation_end_date": emp.probation_end_date,
+        "confirmation_date": emp.confirmation_date,
         "is_on_probation": emp.is_on_probation,
         "pf_applicable": emp.pf_applicable,
         "esic_applicable": emp.esic_applicable,
@@ -351,7 +352,7 @@ def export_employees(
         "pf_applicable", "esic_applicable",
         "pt_applicable", "pan", "aadhaar", "uan", "esic_no", "bank_name",
         "ifsc", "present_addr", "perm_addr",
-        "status", "resignation_date", "retirement_date",
+        "confirmation_date", "status", "resignation_date", "retirement_date",
     ]
 
     output = io.StringIO()
@@ -407,6 +408,7 @@ def export_employees(
             "ifsc": emp.ifsc or "",
             "present_addr": emp.present_addr or "",
             "perm_addr": emp.perm_addr or "",
+            "confirmation_date": str(emp.confirmation_date) if emp.confirmation_date else "",
             "status": emp.status or "",
             "resignation_date": str(emp.resignation_date) if emp.resignation_date else "",
             "retirement_date": str(emp.retirement_date) if emp.retirement_date else "",
@@ -505,6 +507,7 @@ def create_employee(
         category=body.category or 'staff',
         probation_days=body.probation_days or 90,
         probation_end_date=body.probation_end_date,
+        confirmation_date=body.confirmation_date,
         is_on_probation=True,
         pf_applicable=body.pf_applicable,
         esic_applicable=esic_applicable,

@@ -57,7 +57,7 @@ const TEMPLATE_HEADERS = [
   "emp_code", "legacy_code", "sap_code", "name", "father_name", "dob", "gender",
   "marital_status", "blood_group", "religion", "mobile", "email", "doj",
   "entity_id", "location_id", "department_id", "division", "designation",
-  "grade_id", "shift_id", "category",
+  "grade_id", "shift_id", "category", "confirmation_date",
   "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
   "ctc_annual", "basic", "hra", "spl", "cca", "leave_travel",
   "medical", "other_earning", "other_allowance",

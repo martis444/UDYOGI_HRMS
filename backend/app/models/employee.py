@@ -111,6 +111,8 @@ class Employee(Base):
     probation_days = Column(Integer, nullable=False, default=90)
     probation_end_date = Column(Date, nullable=True)
     is_on_probation = Column(Boolean, nullable=False, default=True)
+    # HR-set date of confirmation — CL/SL accrual starts after this (Session 18).
+    confirmation_date = Column(Date, nullable=True)
     pf_applicable = Column(Boolean)
     esic_applicable = Column(Boolean)
     pt_applicable = Column(Boolean)

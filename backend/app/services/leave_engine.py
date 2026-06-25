@@ -1,16 +1,23 @@
 """
-Leave engine — flat annual grant model (Session 15.3).
+Leave engine (Session 15.3, revised Session 18).
 
-Leave is CL / SL / PL only (EL retired in migration 010). There is no monthly
-accrual and no probation gate on leave: an employee simply has no leave balance
-until their first DOJ anniversary (doj + 1 year), at which point a flat annual
-quota is granted. On every later anniversary the unused balance is carried
-forward and the fresh quota added on top, with `used` reset to 0.
+Leave is CL / SL / PL only (EL retired in migration 010). Two different models:
+
+  PL — cumulative, carries forward. Granted after the first DOJ anniversary;
+       tb = completed_DOJ_years × policy[PL]; used is all-time. (Unchanged.)
+
+  CL / SL (Session 18) — do NOT carry forward. They accrue monthly at
+       policy/12 per *completed* calendar month, starting after the employee's
+       confirmation_date (HR-set), and reset to 0 at the start of each financial
+       year (FINANCIAL_YEAR_START_MONTH = 1 April). So within an FY:
+         tb  = min(completed_confirmed_months × policy/12, policy)   (fractional, 2dp)
+         used = CL/SL consumed within the current FY only
+         alb  = max(tb - used, 0)
 
   ANNUAL_LEAVE = {CL: 10, SL: 7, PL: 14}   (config.settings.ANNUAL_LEAVE)
 
-Probation (3 months default, 6 max) is kept purely for confirmation — it no
-longer starts or gates leave.
+Everything is DERIVED on read (15.7 self-correcting), so the FY reset needs no
+stored mutation — CL/SL are simply scoped to the current FY when resolved.
 
 Workers (category='worker') never get leave.
 """
@@ -64,29 +71,81 @@ def _latest_row(db: Session, emp_code: str, lt: str) -> LeaveBalance | None:
     )
 
 
-def derived_used(db: Session, emp_code: str) -> dict[str, float]:
-    """`used` is DERIVED (15.7-style self-correcting), from the two authoritative
-    leave-consumption sources, so it can never drift from reality:
-      1. leave actually taken  = attendance_daily rows with att_status cl/sl/pl
+def _used_days(
+    db: Session, emp_code: str, lt: str,
+    start: date | None = None, end: date | None = None,
+) -> float:
+    """`used` for one bucket, DERIVED (15.7-style self-correcting) from the two
+    authoritative consumption sources, optionally scoped to [start, end]:
+      1. leave actually taken = attendance_daily rows with att_status cl/sl/pl
          (written by leave approval, 15.3) — Sundays already excluded.
-      2. leave spent covering late-coming = the LATE_COVER ledger (15.4) in
-         leave_accrual_log.
+      2. leave spent covering late-coming = the LATE_COVER ledger (15.4).
+    CL/SL pass the current-FY window (no carry-forward); PL passes none (all-time).
     """
-    used = {"CL": 0.0, "SL": 0.0, "PL": 0.0}
-    for code, lt in (("cl", "CL"), ("sl", "SL"), ("pl", "PL")):
-        used[lt] += float(
-            db.query(AttendanceDaily)
-            .filter(AttendanceDaily.emp_code == emp_code, AttendanceDaily.att_status == code)
-            .count()
-        )
-    for log in (
-        db.query(LeaveAccrualLog)
-        .filter(LeaveAccrualLog.emp_code == emp_code, LeaveAccrualLog.reason.like("LATE_COVER:%"))
-        .all()
-    ):
-        if log.leave_type in used:
-            used[log.leave_type] += float(log.days_credited or 0)
+    code = _LEAVE_TO_ATT[lt]
+    q = db.query(AttendanceDaily).filter(
+        AttendanceDaily.emp_code == emp_code, AttendanceDaily.att_status == code,
+    )
+    if start is not None:
+        q = q.filter(AttendanceDaily.att_date >= start)
+    if end is not None:
+        q = q.filter(AttendanceDaily.att_date <= end)
+    used = float(q.count())
+
+    lq = db.query(LeaveAccrualLog).filter(
+        LeaveAccrualLog.emp_code == emp_code,
+        LeaveAccrualLog.leave_type == lt,
+        LeaveAccrualLog.reason.like("LATE_COVER:%"),
+    )
+    if start is not None:
+        lq = lq.filter(LeaveAccrualLog.accrual_date >= start)
+    if end is not None:
+        lq = lq.filter(LeaveAccrualLog.accrual_date <= end)
+    for log in lq.all():
+        used += float(log.days_credited or 0)
     return used
+
+
+def derived_used(db: Session, emp_code: str) -> dict[str, float]:
+    """All-time used per bucket (kept for callers/back-compat)."""
+    return {lt: _used_days(db, emp_code, lt) for lt in _BUCKETS}
+
+
+def financial_year_window(as_of: date) -> tuple[date, date]:
+    """(fy_start, fy_end) for the financial year containing `as_of`.
+    FY starts on FINANCIAL_YEAR_START_MONTH (1 April for India)."""
+    m = settings.FINANCIAL_YEAR_START_MONTH
+    fy_start = date(as_of.year if as_of.month >= m else as_of.year - 1, m, 1)
+    fy_end = date(fy_start.year + 1, m, 1) - timedelta(days=1)
+    return fy_start, fy_end
+
+
+def _confirmed_months_in_fy(
+    confirmation: date | None, as_of: date, fy_start: date
+) -> int:
+    """Count complete calendar months within the FY whose last day is on/before
+    `as_of` and for which the employee was already confirmed at the month's start.
+    Accrual is in arrears — 'after each completed month'."""
+    if confirmation is None or confirmation > as_of:
+        return 0
+    count = 0
+    y, mo = fy_start.year, fy_start.month
+    for _ in range(12):
+        month_first = date(y, mo, 1)
+        nxt = date(y + 1, 1, 1) if mo == 12 else date(y, mo + 1, 1)
+        month_last = nxt - timedelta(days=1)
+        if month_last <= as_of and confirmation <= month_first:
+            count += 1
+        y, mo = nxt.year, nxt.month
+    return count
+
+
+def accrued_cl_sl(confirmation: date | None, annual: float, as_of: date) -> float:
+    """CL/SL accrued in the current FY: (annual/12) per completed confirmed month,
+    capped at the annual quota. Resets each FY. Fractional, rounded to 2dp."""
+    fy_start, _ = financial_year_window(as_of)
+    months = _confirmed_months_in_fy(confirmation, as_of, fy_start)
+    return round(min(months * (annual / 12.0), annual), 2)
 
 
 def reflect_all_approved_leaves(emp_code: str, db: Session) -> int:
@@ -108,9 +167,12 @@ def resolve_leave_balance(
 ) -> dict:
     """
     Canonical leave-balance resolver. Returns {cl,sl,pl: {tb, ulb, alb}} where:
-      tb (entitlement) = completed_leave_years × policy amount  (0 for workers / pre-1yr)
-      ulb (used)       = the stored cumulative `used` for that bucket
-      alb (available)  = max(tb - ulb, 0)
+      PL    : tb = completed_DOJ_years × policy (cumulative, carries forward);
+              ulb = all-time used.
+      CL/SL : tb = monthly accrual (policy/12 per completed confirmed month) within
+              the current financial year, capped at the annual quota, reset each FY;
+              ulb = used within the current FY only (no carry-forward).
+      alb   : max(tb - ulb, 0). All 0 for workers.
 
     write_through=True keeps the stored entitlement column (and the generated
     `balance`) fresh and ensures a CL/SL/PL row exists — self-healing on read.
@@ -123,13 +185,21 @@ def resolve_leave_balance(
     years = completed_leave_years(emp.doj, as_of_date)
     is_worker = (emp.category or "staff") == "worker"
     policy = get_leave_policy(db)
-    used_map = derived_used(db, emp_code)   # used is derived too (self-correcting)
+    fy_start, fy_end = financial_year_window(as_of_date)
 
     out: dict = {}
     changed = False
     for lt in _BUCKETS:
-        tb = 0.0 if is_worker else round(years * policy.get(lt, 0.0), 2)
-        ulb = round(used_map.get(lt, 0.0), 2)
+        if is_worker:
+            tb, ulb = 0.0, 0.0
+        elif lt == "PL":
+            # Cumulative: carries forward, granted after 1y DOJ; used is all-time.
+            tb = round(years * policy.get("PL", 0.0), 2)
+            ulb = round(_used_days(db, emp_code, "PL"), 2)
+        else:
+            # CL/SL: FY-scoped monthly accrual after confirmation; no carry-forward.
+            tb = accrued_cl_sl(emp.confirmation_date, policy.get(lt, 0.0), as_of_date)
+            ulb = round(_used_days(db, emp_code, lt, fy_start, fy_end), 2)
         row = _latest_row(db, emp_code, lt)
 
         if write_through:

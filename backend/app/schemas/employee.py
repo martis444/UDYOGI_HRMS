@@ -81,6 +81,7 @@ class EmployeeCreate(BaseModel):
     category: Optional[str] = 'staff'
     probation_days: Optional[int] = 90
     probation_end_date: Optional[date] = None
+    confirmation_date: Optional[date] = None  # CL/SL accrual starts after this
 
     # Statutory flags
     pf_applicable: bool = True
@@ -186,6 +187,7 @@ class EmployeeUpdate(BaseModel):
     category: Optional[str] = None
     probation_days: Optional[int] = None
     probation_end_date: Optional[date] = None
+    confirmation_date: Optional[date] = None
     pf_applicable: Optional[bool] = None
     pt_applicable: Optional[bool] = None
     pan: Optional[str] = None
@@ -294,6 +296,7 @@ class EmployeeResponse(BaseModel):
     category: Optional[str] = None
     probation_days: Optional[int] = None
     probation_end_date: Optional[date] = None
+    confirmation_date: Optional[date] = None
     is_on_probation: Optional[bool] = None
     pf_applicable: Optional[bool] = None
     esic_applicable: Optional[bool] = None
