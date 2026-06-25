@@ -243,6 +243,17 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
   const filteredGrades = opts?.grades.filter((g) => g.entity_id === emp.entity_id) ?? [];
   const filteredShifts = opts?.shifts.filter((s) => s.entity_id === emp.entity_id) ?? [];
 
+  // Resolve FK ids to human-readable names for the view-mode display (fall back to the id).
+  const deptName = opts?.departments.find((d) => d.id === emp.department_id)?.name
+    ?? (emp.department_id != null ? String(emp.department_id) : undefined);
+  const gradeName = (() => {
+    const g = opts?.grades.find((g) => g.id === emp.grade_id);
+    return g ? (g.name ? `${g.code} — ${g.name}` : g.code) : (emp.grade_id != null ? String(emp.grade_id) : undefined);
+  })();
+  const shiftName = opts?.shifts.find((s) => s.id === emp.shift_id)?.name
+    ?? (emp.shift_id != null ? String(emp.shift_id) : undefined);
+  const locName = activeLocations.find((l) => l.id === emp.location_id)?.name ?? emp.location_id;
+
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto pb-10 space-y-5">
       {/* Breadcrumb */}
@@ -344,12 +355,12 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
           <GlassCard>
             <SectionTitle>Organisation</SectionTitle>
             <div className="p-5 grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <InfoRow label="Location" value={emp.location_id} />
-              <InfoRow label="Department" value={String(emp.department_id ?? "")} />
+              <InfoRow label="Location" value={locName} />
+              <InfoRow label="Department" value={deptName} />
               <InfoRow label="Designation" value={emp.designation} />
               <InfoRow label="Division" value={emp.division} />
-              <InfoRow label="Grade" value={String(emp.grade_id ?? "")} />
-              <InfoRow label="Shift" value={String(emp.shift_id ?? "")} />
+              <InfoRow label="Grade" value={gradeName} />
+              <InfoRow label="Shift" value={shiftName} />
               <InfoRow label="Reporting manager" value={emp.reporting_mgr_code} mono />
               <InfoRow label="Category" value={emp.category} />
               <InfoRow label="Confirmation date" value={emp.confirmation_date} />
