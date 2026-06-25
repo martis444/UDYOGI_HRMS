@@ -172,6 +172,25 @@ def process_payroll_month(
     days_lwp = _count("lwp")
     ot_hours = sum(float(r.ot_hours or 0) for r in att_rows)
 
+    # Session 18 — CSV attendance is authoritative. The monthly CSV import writes
+    # aggregate day-counts straight to payroll_months but NO per-day attendance_daily
+    # rows. Without this guard, reprocessing (e.g. generating the payslip) would
+    # recompute days_a=0 from the empty per-day table and reset pay_days to full,
+    # wiping the uploaded attendance. So: when there are no per-day rows but an
+    # existing row already carries uploaded attendance, preserve it. Per-day data,
+    # whenever present, still wins (biometric punches / reflected approved leaves).
+    csv_authoritative = (not att_rows) and existing is not None and existing.pay_days is not None
+    if csv_authoritative:
+        days_p   = int(existing.days_p or 0)
+        days_a   = int(existing.days_a or 0)
+        days_wo  = int(existing.days_wo or 0)
+        days_cl  = int(existing.days_cl or 0)
+        days_pl  = int(existing.days_pl or 0)
+        days_sl  = int(existing.days_sl or 0)
+        days_h   = int(existing.days_h or 0)
+        days_lwp = int(existing.days_lwp or 0)
+        ot_hours = float(existing.ot_hours or 0)
+
     # ── Late-coming penalty (15.4) ────────────────────────────────────────────
     # Every 3 'late' days = 1 absent-equivalent, covered first from CL/SL/PL, the
     # rest charged as LD. Uncovered late days are charged ONCE — as LD only — NOT
@@ -204,7 +223,8 @@ def process_payroll_month(
     # No attendance rows → days_a/days_lwp = 0 → factor = 1.0 → full pay.
     divisor  = settings.PER_DAY_DIVISOR
     lop_days = days_a + days_lwp
-    pay_days = max(0, divisor - lop_days)
+    # CSV-authoritative months keep the uploaded pay_days verbatim; otherwise derive it.
+    pay_days = int(existing.pay_days) if csv_authoritative else max(0, divisor - lop_days)
     payable_factor = Decimal(pay_days) / Decimal(divisor)
 
     # Earnings prorate by payable_factor; deductions stay on the full statutory
@@ -229,7 +249,7 @@ def process_payroll_month(
         days_h             = days_h or None,
         days_lwp           = days_lwp or None,
         ot_hours           = ot_hours or None,
-        late_days          = late["late_days"],
+        late_days          = (int(existing.late_days or 0) if csv_authoritative else late["late_days"]),
         absent_from_late   = late["absent_from_late"],
         ld                 = data["ld"],
         period_start       = wdi["period_start"],
