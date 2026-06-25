@@ -79,9 +79,9 @@ function InfoRow({ label, value, mono = false }: { label: string; value?: string
   const display = value === null || value === undefined || value === "" ? "—"
     : typeof value === "boolean" ? (value ? "Yes" : "No") : value;
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-[10px] font-semibold text-[#6B6B6B] uppercase tracking-wide mb-0.5">{label}</p>
-      <p className={`text-sm text-[#1A1A1A] ${mono ? "font-mono" : ""}`}>{String(display)}</p>
+      <p className={`text-sm text-[#1A1A1A] break-words ${mono ? "font-mono" : ""}`}>{String(display)}</p>
     </div>
   );
 }
