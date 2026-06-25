@@ -64,8 +64,8 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
     loan_emi        = 0
     other_deduction = 0
     total_deduction = pf_emp + esic_emp + int(pt) + loan_emi + other_deduction
-    # other_allowance is added after all statutory deductions (not part of gross/ESIC/PF base)
-    net_pay         = gross - total_deduction + other_allowance
+    # other_allowance is RECORD-ONLY (ad-hoc payout tracked outside payroll) — NOT in net.
+    net_pay         = gross - total_deduction
     total_days      = calendar.monthrange(year, month)[1]
 
     # Proration factor — resolved later in process_payroll_month when pay_days is known
@@ -208,11 +208,11 @@ def process_payroll_month(
     payable_factor = Decimal(pay_days) / Decimal(divisor)
 
     # Earnings prorate by payable_factor; deductions stay on the full statutory
-    # gross (rule from 13.9). other_allowance is always paid in full.
+    # gross (rule from 13.9). other_allowance is RECORD-ONLY now (kept as a snapshot
+    # on the row, but never added to take-home).
     stat_earnings  = Decimal(str(data["gross"]))             # basic+hra+spl+cca+lt
-    other_allow    = Decimal(str(data["other_allowance"]))
     total_ded      = Decimal(str(data["total_deduction"]))
-    total_earnings = (stat_earnings * payable_factor) + other_allow
+    total_earnings = stat_earnings * payable_factor
     prorated_net   = float(total_earnings - total_ded)
 
     now = datetime.now(timezone.utc)

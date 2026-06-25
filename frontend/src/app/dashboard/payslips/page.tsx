@@ -246,17 +246,6 @@ function PayslipDocument({ data }: { data: PayslipData }) {
               )}
             </tr>
 
-            {/* OTHER ALL. — conditional */}
-            {data.other_allowance > 0 && (
-              <tr>
-                <td style={tdStyle}></td>
-                <td style={tdStyle}>OTHER ALL.</td>
-                <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.other_allowance)}</td>
-                <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.other_allowance)}</td>
-                <td style={tdStyle}></td><td style={tdStyle}></td>
-              </tr>
-            )}
-
             {/* Footer row 1: Paydays / Total Earnings / Total Deductions */}
             <tr style={{ background: "#ccc", fontWeight: "bold" }}>
               <td style={tdStyle}>Paydays: {data.pay_days ?? data.total_days ?? "—"}</td>

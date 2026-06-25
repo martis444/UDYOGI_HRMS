@@ -57,11 +57,13 @@ const TEMPLATE_HEADERS = [
   "emp_code", "legacy_code", "sap_code", "name", "father_name", "dob", "gender",
   "marital_status", "blood_group", "religion", "mobile", "email", "doj",
   "entity_id", "location_id", "department_id", "division", "designation",
-  "grade_id", "shift_id", "ctc_annual", "basic", "hra", "spl", "cca",
+  "grade_id", "shift_id", "category",
+  "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
+  "ctc_annual", "basic", "hra", "spl", "cca", "leave_travel",
+  "medical", "other_earning", "other_allowance",
   "pf_applicable", "pt_applicable", "pan", "aadhaar", "uan", "esic_no",
-  "bank_name", "bank_acc", "ifsc", "bank_branch",
-  "present_addr", "present_city", "present_state", "present_pin",
-  "perm_addr", "perm_city", "perm_state", "perm_pin", "status",
+  "bank_name", "bank_acc", "ifsc",
+  "present_addr", "perm_addr", "status", "resignation_date",
 ];
 
 function downloadTemplate() {

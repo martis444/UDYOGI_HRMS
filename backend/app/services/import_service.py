@@ -134,9 +134,19 @@ _COL_MAP: dict[str, str] = {
     "leave travel": "leave_travel",
     "leave_travel": "leave_travel",
     "lta": "leave_travel",
-    # other_allowance
+    # medical
+    "medical": "medical",
+    "medical allowance": "medical",
+    "medical_allowance": "medical",
+    # other_earning
+    "other earning": "other_earning",
+    "other earnings": "other_earning",
+    "other_earning": "other_earning",
+    "others earning": "other_earning",
+    # other_allowance (RECORD-ONLY ad-hoc payout — not on payslip)
     "other allowance": "other_allowance",
     "other_allowance": "other_allowance",
+    "others allowance": "other_allowance",
     # pf_applicable
     "pf applicable": "pf_applicable",
     "pf_applicable": "pf_applicable",
@@ -176,42 +186,29 @@ _COL_MAP: dict[str, str] = {
     "ifsc": "ifsc",
     "ifsc code": "ifsc",
     "ifsc_code": "ifsc",
-    # bank_branch
-    "bank branch": "bank_branch",
-    "bank_branch": "bank_branch",
-    # present_addr
+    # present_addr (full text only — city/state/pin breakdown removed)
     "present address": "present_addr",
     "present_addr": "present_addr",
     "address": "present_addr",
-    # present_city
-    "present city": "present_city",
-    "present_city": "present_city",
-    "city": "present_city",
-    # present_state
-    "present state": "present_state",
-    "present_state": "present_state",
-    "state": "present_state",
-    # present_pin
-    "present pin": "present_pin",
-    "present_pin": "present_pin",
-    "pin code": "present_pin",
-    "pincode": "present_pin",
     # perm_addr
     "permanent address": "perm_addr",
     "perm_addr": "perm_addr",
     "perm address": "perm_addr",
-    # perm_city
-    "permanent city": "perm_city",
-    "perm_city": "perm_city",
-    "perm city": "perm_city",
-    # perm_state
-    "permanent state": "perm_state",
-    "perm_state": "perm_state",
-    "perm state": "perm_state",
-    # perm_pin
-    "permanent pin": "perm_pin",
-    "perm_pin": "perm_pin",
-    "perm pin": "perm_pin",
+    # profit center
+    "profit center code": "profit_center_code",
+    "profit_center_code": "profit_center_code",
+    "profit center name": "profit_center_name",
+    "profit_center_name": "profit_center_name",
+    # cost center
+    "cost center code": "cost_center_code",
+    "cost_center_code": "cost_center_code",
+    "cost center name": "cost_center_name",
+    "cost_center_name": "cost_center_name",
+    # category (director | staff | worker)
+    "category": "category",
+    # resignation date
+    "resignation date": "resignation_date",
+    "resignation_date": "resignation_date",
     # status
     "status": "status",
 }
@@ -366,9 +363,8 @@ _TEXT_COLS = [
     "sap_code",
     "name", "father_name", "marital_status", "blood_group", "religion", "email",
     "division", "designation", "reporting_mgr_code", "pan", "uan", "esic_no",
-    "bank_name", "ifsc", "bank_branch", "present_addr", "present_city",
-    "present_state", "present_pin", "perm_addr", "perm_city", "perm_state",
-    "perm_pin",
+    "bank_name", "ifsc", "present_addr", "perm_addr",
+    "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
 ]
 
 
@@ -415,9 +411,15 @@ def _apply_updates(emp, row: dict, db: Session, dept_cache: dict, now: datetime)
         emp.gender = _GENDER_MAP.get(g, g)
     if _present(row, "status"):
         emp.status = str(row["status"]).strip().lower()
+    if _present(row, "category"):
+        emp.category = str(row["category"]).strip().lower()
+    if _present(row, "resignation_date"):
+        emp.resignation_date = _row_date(row, "resignation_date")
 
     salary_changed = False
-    for col in ["ctc_annual", "basic", "hra", "spl", "cca", "leave_travel", "other_allowance"]:
+    # medical/other_earning/other_allowance carried but NOT part of statutory gross.
+    for col in ["ctc_annual", "basic", "hra", "spl", "cca", "leave_travel",
+                "medical", "other_earning", "other_allowance"]:
         if _present(row, col):
             setattr(emp, col, _row_dec(row, col))
             if col in ("basic", "hra", "spl", "cca", "leave_travel"):
@@ -725,8 +727,10 @@ def commit_import(
             spl             = _row_dec(row, "spl")
             cca             = _row_dec(row, "cca")
             leave_travel    = _row_dec(row, "leave_travel") or Decimal("0")
+            medical         = _row_dec(row, "medical") or Decimal("0")
+            other_earning   = _row_dec(row, "other_earning") or Decimal("0")
             other_allowance = _row_dec(row, "other_allowance") or Decimal("0")
-            # Statutory gross excludes other_allowance
+            # Statutory gross excludes medical/other_earning/other_allowance
             gross = sum((v for v in [basic, hra, spl, cca, leave_travel] if v), Decimal("0"))
 
             aadhaar = row.get("aadhaar")
@@ -768,7 +772,15 @@ def commit_import(
                 spl=spl,
                 cca=cca,
                 leave_travel=leave_travel,
+                medical=medical,
+                other_earning=other_earning,
                 other_allowance=other_allowance,
+                category=(row.get("category") or "staff").strip().lower(),
+                profit_center_code=row.get("profit_center_code"),
+                profit_center_name=row.get("profit_center_name"),
+                cost_center_code=row.get("cost_center_code"),
+                cost_center_name=row.get("cost_center_name"),
+                resignation_date=_row_date(row, "resignation_date"),
                 pf_applicable=_row_bool(row, "pf_applicable", True),
                 esic_applicable=gross <= Decimal("21000"),
                 pt_applicable=_row_bool(row, "pt_applicable", True),
@@ -779,15 +791,8 @@ def commit_import(
                 bank_name=row.get("bank_name"),
                 bank_acc_enc=_pgp_encrypt_local(db, bank_acc) if bank_acc else None,
                 ifsc=row.get("ifsc"),
-                bank_branch=row.get("bank_branch"),
                 present_addr=row.get("present_addr"),
-                present_city=row.get("present_city"),
-                present_state=row.get("present_state"),
-                present_pin=row.get("present_pin"),
                 perm_addr=row.get("perm_addr"),
-                perm_city=row.get("perm_city"),
-                perm_state=row.get("perm_state"),
-                perm_pin=row.get("perm_pin"),
                 status=status_val,
                 created_at=now,
                 updated_at=now,

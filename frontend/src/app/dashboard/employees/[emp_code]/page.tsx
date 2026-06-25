@@ -27,14 +27,18 @@ interface Emp {
   entity_id: string; location_id: string; department_id?: number;
   division?: string; designation?: string; grade_id?: number;
   reporting_mgr_code?: string; shift_id?: number;
+  category?: string;
   ctc_annual?: string; basic?: string; hra?: string;
   spl?: string; cca?: string; leave_travel?: string; monthly_gross?: string;
+  medical?: string; other_earning?: string; other_allowance?: string;
+  profit_center_code?: string; profit_center_name?: string;
+  cost_center_code?: string; cost_center_name?: string;
   pf_applicable?: boolean; esic_applicable?: boolean; pt_applicable?: boolean;
   pan?: string; aadhaar?: string; uan?: string; esic_no?: string;
-  bank_name?: string; bank_acc?: string; ifsc?: string; bank_branch?: string;
-  present_addr?: string; present_city?: string; present_state?: string; present_pin?: string;
-  perm_addr?: string; perm_city?: string; perm_state?: string; perm_pin?: string;
-  status?: string; exit_date?: string; created_at?: string; updated_at?: string;
+  bank_name?: string; bank_acc?: string; ifsc?: string;
+  present_addr?: string; perm_addr?: string;
+  status?: string; exit_date?: string; resignation_date?: string; retirement_date?: string;
+  created_at?: string; updated_at?: string;
 }
 
 interface FormOptions {
@@ -167,9 +171,12 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
       // Build update body (omit emp_code, nullify empties to skip)
       const body: Record<string, unknown> = {};
       const intFields = ["department_id", "grade_id", "shift_id"] as (keyof Emp)[];
-      const numFields = ["basic", "hra", "spl", "cca", "leave_travel", "ctc_annual"] as (keyof Emp)[];
+      const numFields = ["basic", "hra", "spl", "cca", "leave_travel", "ctc_annual",
+        "medical", "other_earning", "other_allowance"] as (keyof Emp)[];
       // Never sent: immutable, computed, or auto/removed statutory flags.
-      const skip = new Set(["emp_code", "entity_id", "monthly_gross", "pf_applicable", "pt_applicable", "esic_applicable"]);
+      // retirement_date is a derived (DOB+60) read-only column.
+      const skip = new Set(["emp_code", "entity_id", "monthly_gross", "retirement_date",
+        "pf_applicable", "pt_applicable", "esic_applicable"]);
       for (const [k, v] of Object.entries(editForm)) {
         if (skip.has(k)) continue;
         if (v === "" || v === null || v === undefined) continue; // skip blank
@@ -343,6 +350,11 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
               <InfoRow label="Grade" value={String(emp.grade_id ?? "")} />
               <InfoRow label="Shift" value={String(emp.shift_id ?? "")} />
               <InfoRow label="Reporting manager" value={emp.reporting_mgr_code} mono />
+              <InfoRow label="Category" value={emp.category} />
+              <InfoRow label="Profit center code" value={emp.profit_center_code} />
+              <InfoRow label="Profit center name" value={emp.profit_center_name} />
+              <InfoRow label="Cost center code" value={emp.cost_center_code} />
+              <InfoRow label="Cost center name" value={emp.cost_center_name} />
             </div>
           </GlassCard>
 
@@ -350,9 +362,10 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
           <GlassCard>
             <SectionTitle>Salary</SectionTitle>
             <div className="p-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {(["basic", "hra", "spl", "cca", "leave_travel", "ctc_annual"] as (keyof Emp)[]).map((f) => (
+              {(["basic", "hra", "spl", "cca", "leave_travel", "ctc_annual", "medical", "other_earning"] as (keyof Emp)[]).map((f) => (
                 <InfoRow key={f} label={f === "leave_travel" ? "LTA" : f.toUpperCase().replace("_", " ")} value={emp[f] ? `₹${parseFloat(String(emp[f])).toLocaleString("en-IN")}` : undefined} />
               ))}
+              <InfoRow label="Other allowance (record only)" value={emp.other_allowance ? `₹${parseFloat(String(emp.other_allowance)).toLocaleString("en-IN")}` : undefined} />
             </div>
           </GlassCard>
 
@@ -367,7 +380,6 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
               <InfoRow label="Bank name" value={emp.bank_name} />
               <InfoRow label="Account" value={emp.bank_acc} mono />
               <InfoRow label="IFSC" value={emp.ifsc} mono />
-              <InfoRow label="Branch" value={emp.bank_branch} />
             </div>
           </GlassCard>
 
@@ -377,11 +389,11 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
             <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <p className="text-[10px] font-bold text-[#6B6B6B] uppercase tracking-wide mb-2">Present</p>
-                <p className="text-sm text-[#1A1A1A]">{[emp.present_addr, emp.present_city, emp.present_state, emp.present_pin].filter(Boolean).join(", ") || "—"}</p>
+                <p className="text-sm text-[#1A1A1A]">{emp.present_addr || "—"}</p>
               </div>
               <div>
                 <p className="text-[10px] font-bold text-[#6B6B6B] uppercase tracking-wide mb-2">Permanent</p>
-                <p className="text-sm text-[#1A1A1A]">{[emp.perm_addr, emp.perm_city, emp.perm_state, emp.perm_pin].filter(Boolean).join(", ") || "—"}</p>
+                <p className="text-sm text-[#1A1A1A]">{emp.perm_addr || "—"}</p>
               </div>
             </div>
           </GlassCard>
@@ -473,12 +485,37 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
               <EditField label="Reporting manager code">
                 <input value={editForm.reporting_mgr_code ?? ""} onChange={(e) => setEditField("reporting_mgr_code", e.target.value)} className={INPUT} />
               </EditField>
+              <EditField label="Category">
+                <select value={editForm.category ?? "staff"} onChange={(e) => setEditField("category", e.target.value)} className={SELECT}>
+                  <option value="director">Director</option>
+                  <option value="staff">Staff</option>
+                  <option value="worker">Worker</option>
+                </select>
+              </EditField>
+              <EditField label="Profit center code">
+                <input value={editForm.profit_center_code ?? ""} onChange={(e) => setEditField("profit_center_code", e.target.value)} className={INPUT} />
+              </EditField>
+              <EditField label="Profit center name">
+                <input value={editForm.profit_center_name ?? ""} onChange={(e) => setEditField("profit_center_name", e.target.value)} className={INPUT} />
+              </EditField>
+              <EditField label="Cost center code">
+                <input value={editForm.cost_center_code ?? ""} onChange={(e) => setEditField("cost_center_code", e.target.value)} className={INPUT} />
+              </EditField>
+              <EditField label="Cost center name">
+                <input value={editForm.cost_center_name ?? ""} onChange={(e) => setEditField("cost_center_name", e.target.value)} className={INPUT} />
+              </EditField>
               <EditField label="Status">
                 <select value={editForm.status ?? ""} onChange={(e) => setEditField("status", e.target.value)} className={SELECT}>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                   <option value="exited">Exited</option>
                 </select>
+              </EditField>
+              <EditField label="Resignation date">
+                <input type="date" value={editForm.resignation_date ?? ""} onChange={(e) => setEditField("resignation_date", e.target.value)} className={INPUT} />
+              </EditField>
+              <EditField label="Retirement date (auto = DOB + 60y)">
+                <input type="date" value={editForm.retirement_date ?? ""} readOnly disabled className={`${INPUT} opacity-60`} />
               </EditField>
             </div>
           </GlassCard>
@@ -501,6 +538,18 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
                   <input type="number" min="0" step="0.01" value={String(editForm.ctc_annual ?? "")} onChange={(e) => setEditField("ctc_annual", e.target.value)} className={`${INPUT} pl-7`} />
                 </div>
               </EditField>
+              {([
+                { key: "medical" as const, label: "Medical" },
+                { key: "other_earning" as const, label: "Other earning" },
+                { key: "other_allowance" as const, label: "Other allowance (record only)" },
+              ]).map(({ key, label }) => (
+                <EditField key={key} label={label}>
+                  <div className="relative">
+                    <IndianRupee size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" />
+                    <input type="number" min="0" step="0.01" value={String(editForm[key] ?? "")} onChange={(e) => setEditField(key, e.target.value)} className={`${INPUT} pl-7`} />
+                  </div>
+                </EditField>
+              ))}
             </div>
             <div className="px-5 pb-5">
               <div className="flex items-center gap-2 p-3 rounded-xl bg-[#E5202E]/6 border border-[#E5202E]/15">

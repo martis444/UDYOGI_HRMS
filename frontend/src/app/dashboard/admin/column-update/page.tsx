@@ -13,21 +13,29 @@ import {
 interface ColMeta { key: string; label: string; group: string; }
 
 const ALLOWED_COLUMNS: ColMeta[] = [
+  { key: "sap_code",          label: "SAP code",            group: "Profile" },
   { key: "designation",       label: "Designation",         group: "Profile" },
   { key: "department_id",     label: "Department",          group: "Profile" },
   { key: "grade_id",          label: "Grade",               group: "Profile" },
   { key: "shift_id",          label: "Shift",               group: "Profile" },
   { key: "location_id",       label: "Location",            group: "Profile" },
   { key: "reporting_mgr_code",label: "Reporting manager",   group: "Profile" },
+  { key: "profit_center_code",label: "Profit center code",  group: "Costing" },
+  { key: "profit_center_name",label: "Profit center name",  group: "Costing" },
+  { key: "cost_center_code",  label: "Cost center code",    group: "Costing" },
+  { key: "cost_center_name",  label: "Cost center name",    group: "Costing" },
   { key: "basic",             label: "Basic salary",        group: "Salary" },
   { key: "hra",               label: "HRA",                 group: "Salary" },
-  { key: "da",                label: "DA",                  group: "Salary" },
   { key: "spl",               label: "Special allowance",   group: "Salary" },
   { key: "cca",               label: "CCA",                 group: "Salary" },
+  { key: "leave_travel",      label: "LTA",                 group: "Salary" },
+  { key: "medical",           label: "Medical",             group: "Salary" },
+  { key: "other_earning",     label: "Other earning",       group: "Salary" },
+  { key: "other_allowance",   label: "Other allowance",     group: "Salary" },
   { key: "ctc_annual",        label: "CTC annual",          group: "Salary" },
   { key: "bank_name",         label: "Bank name",           group: "Banking" },
   { key: "ifsc",              label: "IFSC code",           group: "Banking" },
-  { key: "bank_branch",       label: "Bank branch",         group: "Banking" },
+  { key: "resignation_date",  label: "Resignation date",    group: "Status" },
 ];
 
 const LOCKED_COLUMNS: ColMeta[] = [

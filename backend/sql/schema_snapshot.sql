@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 8K20tJkZ94AzQgLLGrE6e3rxFPIAPdpiC3wsQwbVAHXC2zi1JaDcue1obHm336T
+\restrict QDtJeKLEMJ6FCvuJU8f0TBNxSYs6qafNBNIGAY01IkrUmpwir3AtobfbpX6H26X
 
 -- Dumped from database version 18.4
 -- Dumped by pg_dump version 18.4
@@ -344,7 +344,7 @@ CREATE TABLE public.employee_categories (
     has_leaves boolean DEFAULT false NOT NULL,
     no_work_no_pay boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT employee_categories_name_check CHECK (((name)::text = ANY ((ARRAY['staff'::character varying, 'worker'::character varying])::text[])))
+    CONSTRAINT employee_categories_name_check CHECK (((name)::text = ANY (ARRAY[('director'::character varying)::text, ('staff'::character varying)::text, ('worker'::character varying)::text])))
 );
 
 
@@ -375,7 +375,6 @@ ALTER SEQUENCE public.employee_categories_id_seq OWNED BY public.employee_catego
 CREATE TABLE public.employees (
     emp_code character varying(12) NOT NULL,
     legacy_code character varying(30),
-    sap_code character varying(30),
     name character varying(100) NOT NULL,
     father_name character varying(100),
     dob date,
@@ -409,15 +408,8 @@ CREATE TABLE public.employees (
     bank_name character varying(50),
     bank_acc_enc bytea,
     ifsc character varying(15),
-    bank_branch character varying(50),
     present_addr text,
-    present_city character varying(50),
-    present_state character varying(50),
-    present_pin character varying(10),
     perm_addr text,
-    perm_city character varying(50),
-    perm_state character varying(50),
-    perm_pin character varying(10),
     status character varying(15) DEFAULT 'active'::character varying,
     exit_date date,
     created_at timestamp with time zone DEFAULT now(),
@@ -433,7 +425,14 @@ CREATE TABLE public.employees (
     conveyance numeric(10,2) DEFAULT 0 NOT NULL,
     medical numeric(10,2) DEFAULT 0 NOT NULL,
     other_earning numeric(10,2) DEFAULT 0 NOT NULL,
-    CONSTRAINT employees_category_check CHECK (((category)::text = ANY ((ARRAY['staff'::character varying, 'worker'::character varying])::text[]))),
+    sap_code character varying(30),
+    profit_center_code character varying(30),
+    profit_center_name character varying(100),
+    cost_center_code character varying(30),
+    cost_center_name character varying(100),
+    resignation_date date,
+    retirement_date date GENERATED ALWAYS AS (((dob + '60 years'::interval))::date) STORED,
+    CONSTRAINT employees_category_check CHECK (((category)::text = ANY (ARRAY[('director'::character varying)::text, ('staff'::character varying)::text, ('worker'::character varying)::text]))),
     CONSTRAINT employees_gender_check CHECK (((gender)::text = ANY ((ARRAY['male'::character varying, 'female'::character varying, 'other'::character varying])::text[]))),
     CONSTRAINT employees_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'inactive'::character varying, 'exited'::character varying])::text[])))
 );
@@ -1096,10 +1095,7 @@ CREATE VIEW public.v_employee_full AS
     e.esic_no,
     e.bank_name,
     e.ifsc,
-    e.present_city,
-    e.present_state,
-    e.status,
-    u.role
+    e.status
    FROM ((((((public.employees e
      LEFT JOIN public.entities ent ON (((ent.id)::text = (e.entity_id)::text)))
      LEFT JOIN public.locations l ON (((l.id)::text = (e.location_id)::text)))
@@ -1433,13 +1429,6 @@ ALTER TABLE ONLY public.employees
 
 
 --
--- Name: employees_sap_code_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX employees_sap_code_key ON public.employees USING btree (sap_code) WHERE (sap_code IS NOT NULL);
-
-
---
 -- Name: entities entities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1653,6 +1642,13 @@ ALTER TABLE ONLY public.statutory_config
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (emp_code);
+
+
+--
+-- Name: employees_sap_code_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX employees_sap_code_key ON public.employees USING btree (sap_code) WHERE (sap_code IS NOT NULL);
 
 
 --
@@ -2098,5 +2094,5 @@ ALTER TABLE ONLY public.users
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 8K20tJkZ94AzQgLLGrE6e3rxFPIAPdpiC3wsQwbVAHXC2zi1JaDcue1obHm336T
+\unrestrict QDtJeKLEMJ6FCvuJU8f0TBNxSYs6qafNBNIGAY01IkrUmpwir3AtobfbpX6H26X
 

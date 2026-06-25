@@ -1,7 +1,7 @@
 from sqlalchemy import (
     BigInteger, Boolean, Column, Computed, Date, DateTime, ForeignKey,
     Integer, JSON, LargeBinary, Numeric, SmallInteger, String, Text, Time,
-    text as sa_text,
+    FetchedValue, text as sa_text,
 )
 from sqlalchemy.orm import relationship
 
@@ -102,8 +102,12 @@ class Employee(Base):
     spl = Column(Numeric(10, 2))
     cca = Column(Numeric(10, 2))
     leave_travel = Column(Numeric(10, 2), nullable=False, default=0)
+    medical = Column(Numeric(10, 2), nullable=False, default=0)
+    other_earning = Column(Numeric(10, 2), nullable=False, default=0)
+    conveyance = Column(Numeric(10, 2), nullable=False, default=0)
+    # other_allowance is RECORD-ONLY: ad-hoc extra paid outside the payslip, never in net/gross math.
     other_allowance = Column(Numeric(10, 2), nullable=False, default=0)
-    category = Column(String(10), nullable=False, default='staff')
+    category = Column(String(10), nullable=False, default='staff')  # director | staff | worker
     probation_days = Column(Integer, nullable=False, default=90)
     probation_end_date = Column(Date, nullable=True)
     is_on_probation = Column(Boolean, nullable=False, default=True)
@@ -118,15 +122,15 @@ class Employee(Base):
     bank_name = Column(String(50))
     bank_acc_enc = Column(LargeBinary)
     ifsc = Column(String(15))
-    bank_branch = Column(String(50))
     present_addr = Column(Text)
-    present_city = Column(String(50))
-    present_state = Column(String(50))
-    present_pin = Column(String(10))
     perm_addr = Column(Text)
-    perm_city = Column(String(50))
-    perm_state = Column(String(50))
-    perm_pin = Column(String(10))
+    profit_center_code = Column(String(30))
+    profit_center_name = Column(String(100))
+    cost_center_code = Column(String(30))
+    cost_center_name = Column(String(100))
+    resignation_date = Column(Date)
+    # retirement_date is a DB generated column (dob + 60y) — read-only, never write it.
+    retirement_date = Column(Date, server_default=FetchedValue())
     status = Column(String(15))
     exit_date = Column(Date)
     created_at = Column(DateTime(timezone=True))

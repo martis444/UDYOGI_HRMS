@@ -34,16 +34,20 @@ type FormState = {
   entity_id: string; location_id: string; department_id: string;
   designation: string; division: string; grade_id: string;
   shift_id: string; reporting_mgr_code: string;
+  category: string;
   // Salary
   basic: string; hra: string; spl: string; cca: string; leave_travel: string;
+  medical: string; other_earning: string; other_allowance: string;
   ctc_annual: string;
+  // Org costing
+  profit_center_code: string; profit_center_name: string;
+  cost_center_code: string; cost_center_name: string;
   // Statutory
   pan: string; aadhaar: string; uan: string; esic_no: string;
-  bank_name: string; bank_acc: string; ifsc: string; bank_branch: string;
-  // Address
-  present_addr: string; present_city: string; present_state: string; present_pin: string;
-  perm_addr: string; perm_city: string; perm_state: string; perm_pin: string;
-  status: string;
+  bank_name: string; bank_acc: string; ifsc: string;
+  // Address (full text only)
+  present_addr: string; perm_addr: string;
+  status: string; resignation_date: string;
 };
 
 const EMPTY: FormState = {
@@ -52,12 +56,14 @@ const EMPTY: FormState = {
   gender: "", father_name: "", marital_status: "", blood_group: "", religion: "",
   entity_id: "", location_id: "", department_id: "", designation: "", division: "",
   grade_id: "", shift_id: "", reporting_mgr_code: "",
-  basic: "", hra: "", spl: "", cca: "", leave_travel: "", ctc_annual: "",
+  category: "staff",
+  basic: "", hra: "", spl: "", cca: "", leave_travel: "",
+  medical: "", other_earning: "", other_allowance: "", ctc_annual: "",
+  profit_center_code: "", profit_center_name: "", cost_center_code: "", cost_center_name: "",
   pan: "", aadhaar: "", uan: "", esic_no: "",
-  bank_name: "", bank_acc: "", ifsc: "", bank_branch: "",
-  present_addr: "", present_city: "", present_state: "", present_pin: "",
-  perm_addr: "", perm_city: "", perm_state: "", perm_pin: "",
-  status: "active",
+  bank_name: "", bank_acc: "", ifsc: "",
+  present_addr: "", perm_addr: "",
+  status: "active", resignation_date: "",
 };
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
@@ -123,12 +129,8 @@ export default function AddEmployeePage() {
   // Sync perm address from present when sameAddr = true
   useEffect(() => {
     if (!sameAddr) return;
-    setForm((f) => ({
-      ...f,
-      perm_addr: f.present_addr, perm_city: f.present_city,
-      perm_state: f.present_state, perm_pin: f.present_pin,
-    }));
-  }, [sameAddr, form.present_addr, form.present_city, form.present_state, form.present_pin]);
+    setForm((f) => ({ ...f, perm_addr: f.present_addr }));
+  }, [sameAddr, form.present_addr]);
 
   const set = useCallback((field: keyof FormState, value: string | boolean) => {
     setForm((f) => ({ ...f, [field]: value }));
@@ -159,11 +161,12 @@ export default function AddEmployeePage() {
       const strFields: (keyof FormState)[] = [
         "sap_code", "name", "mobile", "email", "doj", "dob", "gender", "father_name", "marital_status",
         "blood_group", "religion", "entity_id", "location_id", "designation", "division",
-        "reporting_mgr_code", "pan", "aadhaar", "uan", "esic_no",
-        "bank_name", "bank_acc", "ifsc", "bank_branch",
-        "present_addr", "present_city", "present_state", "present_pin",
-        "perm_addr", "perm_city", "perm_state", "perm_pin", "status",
+        "reporting_mgr_code", "category", "pan", "aadhaar", "uan", "esic_no",
+        "bank_name", "bank_acc", "ifsc",
+        "present_addr", "perm_addr", "status", "resignation_date",
+        "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
         "ctc_annual", "basic", "hra", "spl", "cca", "leave_travel",
+        "medical", "other_earning", "other_allowance",
       ];
       for (const f of strFields) {
         const v = form[f];
@@ -331,6 +334,25 @@ export default function AddEmployeePage() {
             <Field label="Reporting manager code">
               <input value={form.reporting_mgr_code} onChange={(e) => set("reporting_mgr_code", e.target.value)} placeholder="e.g. UP000005" className={INPUT} />
             </Field>
+            <Field label="Category">
+              <select value={form.category} onChange={(e) => set("category", e.target.value)} className={SELECT}>
+                <option value="director">Director</option>
+                <option value="staff">Staff</option>
+                <option value="worker">Worker</option>
+              </select>
+            </Field>
+            <Field label="Profit center code">
+              <input value={form.profit_center_code} onChange={(e) => set("profit_center_code", e.target.value)} placeholder="Optional" className={INPUT} />
+            </Field>
+            <Field label="Profit center name">
+              <input value={form.profit_center_name} onChange={(e) => set("profit_center_name", e.target.value)} placeholder="Optional" className={INPUT} />
+            </Field>
+            <Field label="Cost center code">
+              <input value={form.cost_center_code} onChange={(e) => set("cost_center_code", e.target.value)} placeholder="Optional" className={INPUT} />
+            </Field>
+            <Field label="Cost center name">
+              <input value={form.cost_center_name} onChange={(e) => set("cost_center_name", e.target.value)} placeholder="Optional" className={INPUT} />
+            </Field>
           </div>
         </Section>
 
@@ -361,6 +383,28 @@ export default function AddEmployeePage() {
               <div className="relative">
                 <IndianRupee size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" />
                 <input type="number" min="0" step="0.01" value={form.ctc_annual} onChange={(e) => set("ctc_annual", e.target.value)} placeholder="0.00" className={`${INPUT} pl-7`} />
+              </div>
+            </Field>
+          </div>
+
+          {/* Record-only / non-gross components */}
+          <div className="mt-4 pt-4 border-t border-[#E2E2DF] grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <Field label="Medical">
+              <div className="relative">
+                <IndianRupee size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" />
+                <input type="number" min="0" step="0.01" value={form.medical} onChange={(e) => set("medical", e.target.value)} placeholder="0.00" className={`${INPUT} pl-7`} />
+              </div>
+            </Field>
+            <Field label="Other earning">
+              <div className="relative">
+                <IndianRupee size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" />
+                <input type="number" min="0" step="0.01" value={form.other_earning} onChange={(e) => set("other_earning", e.target.value)} placeholder="0.00" className={`${INPUT} pl-7`} />
+              </div>
+            </Field>
+            <Field label="Other allowance" hint="Record only — not shown on payslip">
+              <div className="relative">
+                <IndianRupee size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" />
+                <input type="number" min="0" step="0.01" value={form.other_allowance} onChange={(e) => set("other_allowance", e.target.value)} placeholder="0.00" className={`${INPUT} pl-7`} />
               </div>
             </Field>
           </div>
@@ -407,31 +451,15 @@ export default function AddEmployeePage() {
             <Field label="IFSC code">
               <input value={form.ifsc} onChange={(e) => set("ifsc", e.target.value.toUpperCase())} placeholder="SBIN0001234" maxLength={11} className={INPUT} />
             </Field>
-            <Field label="Branch">
-              <input value={form.bank_branch} onChange={(e) => set("bank_branch", e.target.value)} placeholder="Branch name" className={INPUT} />
-            </Field>
           </div>
         </Section>
 
         {/* ── Section 5: Address ── */}
         <Section title="Address" open={openSections.address} onToggle={() => toggleSection("address")}>
           <p className="text-xs font-semibold text-[#5A5A5A] uppercase tracking-wide mb-3">Present address</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="sm:col-span-2">
-              <Field label="Street / building">
-                <input value={form.present_addr} onChange={(e) => set("present_addr", e.target.value)} placeholder="House/flat, street, area" className={INPUT} />
-              </Field>
-            </div>
-            <Field label="City">
-              <input value={form.present_city} onChange={(e) => set("present_city", e.target.value)} placeholder="City" className={INPUT} />
-            </Field>
-            <Field label="State">
-              <input value={form.present_state} onChange={(e) => set("present_state", e.target.value)} placeholder="State" className={INPUT} />
-            </Field>
-            <Field label="PIN code">
-              <input value={form.present_pin} onChange={(e) => set("present_pin", e.target.value)} placeholder="6-digit PIN" maxLength={6} className={INPUT} />
-            </Field>
-          </div>
+          <Field label="Full address">
+            <input value={form.present_addr} onChange={(e) => set("present_addr", e.target.value)} placeholder="House/flat, street, area, city, state, PIN" className={INPUT} />
+          </Field>
 
           <label className="flex items-center gap-2.5 cursor-pointer select-none my-4">
             <div
@@ -446,22 +474,9 @@ export default function AddEmployeePage() {
           {!sameAddr && (
             <>
               <p className="text-xs font-semibold text-[#5A5A5A] uppercase tracking-wide mb-3">Permanent address</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="sm:col-span-2">
-                  <Field label="Street / building">
-                    <input value={form.perm_addr} onChange={(e) => set("perm_addr", e.target.value)} placeholder="House/flat, street, area" className={INPUT} />
-                  </Field>
-                </div>
-                <Field label="City">
-                  <input value={form.perm_city} onChange={(e) => set("perm_city", e.target.value)} placeholder="City" className={INPUT} />
-                </Field>
-                <Field label="State">
-                  <input value={form.perm_state} onChange={(e) => set("perm_state", e.target.value)} placeholder="State" className={INPUT} />
-                </Field>
-                <Field label="PIN code">
-                  <input value={form.perm_pin} onChange={(e) => set("perm_pin", e.target.value)} placeholder="6-digit PIN" maxLength={6} className={INPUT} />
-                </Field>
-              </div>
+              <Field label="Full address">
+                <input value={form.perm_addr} onChange={(e) => set("perm_addr", e.target.value)} placeholder="House/flat, street, area, city, state, PIN" className={INPUT} />
+              </Field>
             </>
           )}
         </Section>

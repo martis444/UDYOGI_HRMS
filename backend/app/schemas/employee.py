@@ -66,9 +66,18 @@ class EmployeeCreate(BaseModel):
     spl: Optional[Decimal] = None
     cca: Optional[Decimal] = None
     leave_travel: Optional[Decimal] = Decimal("0")
+    medical: Optional[Decimal] = Decimal("0")
+    other_earning: Optional[Decimal] = Decimal("0")
+    # Record-only ad-hoc payout (NOT counted in payslip/net) — manual.
     other_allowance: Optional[Decimal] = Decimal("0")
 
-    # Category / probation
+    # Org costing
+    profit_center_code: Optional[str] = None
+    profit_center_name: Optional[str] = None
+    cost_center_code: Optional[str] = None
+    cost_center_name: Optional[str] = None
+
+    # Category / probation. category: director | staff | worker
     category: Optional[str] = 'staff'
     probation_days: Optional[int] = 90
     probation_end_date: Optional[date] = None
@@ -89,23 +98,15 @@ class EmployeeCreate(BaseModel):
     bank_name: Optional[str] = None
     bank_acc: Optional[str] = None
     ifsc: Optional[str] = None
-    bank_branch: Optional[str] = None
 
-    # Present address
+    # Address (full text only — city/state/pin breakdown removed)
     present_addr: Optional[str] = None
-    present_city: Optional[str] = None
-    present_state: Optional[str] = None
-    present_pin: Optional[str] = None
-
-    # Permanent address
     perm_addr: Optional[str] = None
-    perm_city: Optional[str] = None
-    perm_state: Optional[str] = None
-    perm_pin: Optional[str] = None
 
-    # Status
+    # Status / exit
     status: Optional[str] = "active"
     exit_date: Optional[date] = None
+    resignation_date: Optional[date] = None
 
     @field_validator("mobile")
     @classmethod
@@ -175,7 +176,13 @@ class EmployeeUpdate(BaseModel):
     spl: Optional[Decimal] = None
     cca: Optional[Decimal] = None
     leave_travel: Optional[Decimal] = None
-    other_allowance: Optional[Decimal] = None
+    medical: Optional[Decimal] = None
+    other_earning: Optional[Decimal] = None
+    other_allowance: Optional[Decimal] = None  # record-only ad-hoc payout
+    profit_center_code: Optional[str] = None
+    profit_center_name: Optional[str] = None
+    cost_center_code: Optional[str] = None
+    cost_center_name: Optional[str] = None
     category: Optional[str] = None
     probation_days: Optional[int] = None
     probation_end_date: Optional[date] = None
@@ -189,17 +196,11 @@ class EmployeeUpdate(BaseModel):
     bank_name: Optional[str] = None
     bank_acc: Optional[str] = None
     ifsc: Optional[str] = None
-    bank_branch: Optional[str] = None
     present_addr: Optional[str] = None
-    present_city: Optional[str] = None
-    present_state: Optional[str] = None
-    present_pin: Optional[str] = None
     perm_addr: Optional[str] = None
-    perm_city: Optional[str] = None
-    perm_state: Optional[str] = None
-    perm_pin: Optional[str] = None
     status: Optional[str] = None
     exit_date: Optional[date] = None
+    resignation_date: Optional[date] = None
 
     @field_validator("mobile")
     @classmethod
@@ -282,7 +283,13 @@ class EmployeeResponse(BaseModel):
     spl: Optional[Decimal] = None
     cca: Optional[Decimal] = None
     leave_travel: Optional[Decimal] = None
-    other_allowance: Optional[Decimal] = None
+    medical: Optional[Decimal] = None
+    other_earning: Optional[Decimal] = None
+    other_allowance: Optional[Decimal] = None  # record-only ad-hoc payout
+    profit_center_code: Optional[str] = None
+    profit_center_name: Optional[str] = None
+    cost_center_code: Optional[str] = None
+    cost_center_name: Optional[str] = None
     monthly_gross: Decimal = Decimal("0")
     category: Optional[str] = None
     probation_days: Optional[int] = None
@@ -299,17 +306,12 @@ class EmployeeResponse(BaseModel):
     bank_name: Optional[str] = None
     bank_acc: Optional[str] = None     # masked: XXXX 1234
     ifsc: Optional[str] = None
-    bank_branch: Optional[str] = None
     present_addr: Optional[str] = None
-    present_city: Optional[str] = None
-    present_state: Optional[str] = None
-    present_pin: Optional[str] = None
     perm_addr: Optional[str] = None
-    perm_city: Optional[str] = None
-    perm_state: Optional[str] = None
-    perm_pin: Optional[str] = None
     status: Optional[str] = None
     exit_date: Optional[date] = None
+    resignation_date: Optional[date] = None
+    retirement_date: Optional[date] = None  # auto = DOB + 60y (read-only)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     created_by: Optional[str] = None

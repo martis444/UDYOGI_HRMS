@@ -28,12 +28,17 @@ ALLOWED_COLUMNS = [
     "sap_code",
     "department_id", "grade_id", "shift_id", "designation",
     "location_id", "reporting_mgr_code", "basic", "hra",
-    "spl", "cca", "ctc_annual", "bank_name", "ifsc", "bank_branch",
+    "spl", "cca", "ctc_annual", "leave_travel", "medical", "other_earning",
+    "other_allowance", "bank_name", "ifsc",
+    "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
+    "resignation_date",
 ]
 _ALLOWED_SET = set(ALLOWED_COLUMNS)
 _LOCKED_SET = {"emp_code", "pan", "aadhaar_enc", "bank_acc_enc", "entity_id"}
-_NUMERIC_COLS = {"basic", "hra", "spl", "cca", "ctc_annual"}
+_NUMERIC_COLS = {"basic", "hra", "spl", "cca", "ctc_annual",
+                 "leave_travel", "medical", "other_earning", "other_allowance"}
 _INT_COLS = {"department_id", "grade_id", "shift_id"}
+_DATE_COLS = {"resignation_date"}
 
 
 # ---------------------------------------------------------------------------
@@ -177,17 +182,16 @@ def _build_master_row(emp: Employee, db: Session) -> dict:
         "esic_no": emp.esic_no,
         "bank_name": emp.bank_name,
         "ifsc": emp.ifsc,
-        "bank_branch": emp.bank_branch,
         "present_addr": emp.present_addr,
-        "present_city": emp.present_city,
-        "present_state": emp.present_state,
-        "present_pin": emp.present_pin,
         "perm_addr": emp.perm_addr,
-        "perm_city": emp.perm_city,
-        "perm_state": emp.perm_state,
-        "perm_pin": emp.perm_pin,
+        "profit_center_code": emp.profit_center_code,
+        "profit_center_name": emp.profit_center_name,
+        "cost_center_code": emp.cost_center_code,
+        "cost_center_name": emp.cost_center_name,
         "status": emp.status,
         "exit_date": emp.exit_date,
+        "resignation_date": emp.resignation_date,
+        "retirement_date": emp.retirement_date,
         "created_at": emp.created_at,
         "updated_at": emp.updated_at,
         "created_by": emp.created_by,
@@ -300,10 +304,12 @@ def master_data_export(
         "entity_id", "location_id", "location_city", "location_state",
         "department", "division", "designation", "grade", "reporting_mgr_code",
         "shift_id", "ctc_annual", "basic", "hra", "spl", "cca",
+        "leave_travel", "medical", "other_earning", "other_allowance",
+        "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
         "monthly_gross", "pf_applicable", "esic_applicable", "pt_applicable",
-        "pan", "aadhaar", "uan", "esic_no", "bank_name", "ifsc", "bank_branch",
-        "present_addr", "present_city", "present_state", "present_pin",
-        "perm_addr", "perm_city", "perm_state", "perm_pin", "status", "exit_date",
+        "pan", "aadhaar", "uan", "esic_no", "bank_name", "ifsc",
+        "present_addr", "perm_addr", "status", "exit_date",
+        "resignation_date", "retirement_date",
     ]
 
     output = io.StringIO()
@@ -349,19 +355,22 @@ def master_data_export(
             "aadhaar": _mask_aadhaar(aadhaar_plain) or "",
             "uan": emp.uan or "",
             "esic_no": emp.esic_no or "",
+            "leave_travel": str(emp.leave_travel) if emp.leave_travel else "",
+            "medical": str(emp.medical) if emp.medical else "",
+            "other_earning": str(emp.other_earning) if emp.other_earning else "",
+            "other_allowance": str(emp.other_allowance) if emp.other_allowance else "",
+            "profit_center_code": emp.profit_center_code or "",
+            "profit_center_name": emp.profit_center_name or "",
+            "cost_center_code": emp.cost_center_code or "",
+            "cost_center_name": emp.cost_center_name or "",
             "bank_name": emp.bank_name or "",
             "ifsc": emp.ifsc or "",
-            "bank_branch": emp.bank_branch or "",
             "present_addr": emp.present_addr or "",
-            "present_city": emp.present_city or "",
-            "present_state": emp.present_state or "",
-            "present_pin": emp.present_pin or "",
             "perm_addr": emp.perm_addr or "",
-            "perm_city": emp.perm_city or "",
-            "perm_state": emp.perm_state or "",
-            "perm_pin": emp.perm_pin or "",
             "status": emp.status or "",
             "exit_date": str(emp.exit_date) if emp.exit_date else "",
+            "resignation_date": str(emp.resignation_date) if emp.resignation_date else "",
+            "retirement_date": str(emp.retirement_date) if emp.retirement_date else "",
         })
 
     ip = req.client.host if req and req.client else None
@@ -504,6 +513,15 @@ async def column_update_validate(
                         "error": f"Expected integer, got '{new_val_str}'",
                     })
                     continue
+            elif col in _DATE_COLS:
+                try:
+                    date.fromisoformat(new_val_str)
+                except ValueError:
+                    errors.append({
+                        "row": row_num, "emp_code": emp_code, "column": col,
+                        "error": f"Expected date YYYY-MM-DD, got '{new_val_str}'",
+                    })
+                    continue
 
             if new_val_str != old_val_str:
                 emp_changes.append({
@@ -559,6 +577,8 @@ def column_update_commit(
                 setattr(emp, col, Decimal(change.new_value))
             elif col in _INT_COLS:
                 setattr(emp, col, int(change.new_value))
+            elif col in _DATE_COLS:
+                setattr(emp, col, date.fromisoformat(change.new_value))
             else:
                 setattr(emp, col, change.new_value)
 

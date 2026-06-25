@@ -154,17 +154,6 @@
       {% endif %}
     </tr>
 
-    <!-- Row 6: OTHER ALL. (conditional) -->
-    {% if other_allowance %}
-    <tr>
-      <td></td>
-      <td>OTHER ALL.</td>
-      <td class="amt">{{ other_allowance }}</td>
-      <td class="amt">{{ other_allowance }}</td>
-      <td></td><td></td>
-    </tr>
-    {% endif %}
-
     <!-- Footer row 1: Paydays / Total Earnings / Total Deductions -->
     <tr class="ftr">
       <td>Paydays: {{ pay_days if pay_days is not none else total_days }}</td>
