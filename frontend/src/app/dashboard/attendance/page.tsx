@@ -219,6 +219,23 @@ export default function AttendancePage() {
     }
   }, [selEntity, user]);
 
+  // Remember the selected period/entity across navigation. Without this the tab
+  // resets to the current month on every remount, which makes a different month's
+  // data look like the import "disappeared".
+  useEffect(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem("att.period") || "{}");
+      if (s.year)  setSelYear(s.year);
+      if (s.month) setSelMonth(s.month);
+      if (s.entity) setSelEntity(s.entity);
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("att.period", JSON.stringify({ year: selYear, month: selMonth, entity: selEntity }));
+    } catch { /* ignore */ }
+  }, [selYear, selMonth, selEntity]);
+
   // ── Fetch summary ────────────────────────────────────────────────────────────
   const fetchSummary = useCallback(async () => {
     setSummaryLoading(true);
@@ -649,6 +666,15 @@ export default function AttendancePage() {
           {importOpen && (
             <div className="border-t border-[#E2E2DF] p-4 space-y-4">
 
+              {/* Target period — the import always lands in the Period selected above */}
+              <div className="flex items-start gap-2 rounded-xl bg-[#E5202E]/[0.06] border border-[#E5202E]/20 p-3">
+                <Clock size={14} className="text-[#E5202E] shrink-0 mt-0.5" />
+                <p className="text-xs text-[#1A1A1A]">
+                  Importing attendance for <span className="font-bold">{monthLabel}</span>.
+                  This is the <span className="font-semibold">Period</span> selected at the top — change it there to target a different month.
+                </p>
+              </div>
+
               {/* Entity selector (super_admin + ALL tab only) */}
               {user?.role === "super_admin" && selEntity === "ALL" && (
                 <div>
@@ -810,7 +836,7 @@ export default function AttendancePage() {
                     <div className="flex items-start gap-2 bg-green-50 border border-green-200 rounded-xl p-3">
                       <CheckCircle size={16} className="text-green-600 shrink-0 mt-0.5" />
                       <div className="flex-1">
-                        <p className="text-sm font-semibold text-green-700">{commitResult.imported} employees updated</p>
+                        <p className="text-sm font-semibold text-green-700">{commitResult.imported} employees updated for {monthLabel}</p>
                         {commitResult.skipped.length > 0 && (
                           <p className="text-xs text-green-600">{commitResult.skipped.length} skipped (payroll locked)</p>
                         )}
