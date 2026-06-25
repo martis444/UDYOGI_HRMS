@@ -310,12 +310,21 @@ def _row_date(row: dict, key: str) -> Optional[date]:
         return None
 
 
+def _clean_number(v: object) -> str:
+    """Strip thousands separators, currency symbols and spaces from a numeric cell.
+    Excel exports salary as '8,750.00' / '₹2,250' — Decimal()/int() choke on those."""
+    s = str(v).strip()
+    for ch in (",", "₹", "rs.", "rs", " ", " "):  #   = non-breaking space
+        s = s.replace(ch, "") if ch not in ("rs.", "rs") else s.lower().replace(ch, "")
+    return s
+
+
 def _row_dec(row: dict, key: str) -> Optional[Decimal]:
     v = row.get(key)
-    if not v:
+    if v is None or str(v).strip() == "":
         return None
     try:
-        return Decimal(str(v).strip())
+        return Decimal(_clean_number(v))
     except InvalidOperation:
         return None
 
