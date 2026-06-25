@@ -323,6 +323,7 @@ export default function AttendancePage() {
     setImportFile(file);
     setValidateResult(null);
     setCommitResult(null);
+    setImportStep((s) => Math.max(s, 2));  // downloading the template is optional
   };
 
   const handleValidate = async () => {
@@ -689,10 +690,10 @@ export default function AttendancePage() {
 
               {/* Step 1: Download template */}
               <div className={`rounded-xl border p-4 transition ${importStep === 1 ? "border-[#E5202E]/30 bg-[#FFF5F5]" : "border-[#E2E2DF] bg-[#F9F9F7]"}`}>
-                <p className="text-sm font-semibold text-[#1A1A1A] mb-1">Step 1 — Download template</p>
+                <p className="text-sm font-semibold text-[#1A1A1A] mb-1">Step 1 — Download template <span className="font-normal text-[#6B6B6B]">(optional)</span></p>
                 <p className="text-xs text-[#5A5A5A] mb-3">
                   Pre-fills all active employees&apos; HRMS codes + {daysInMonth(selYear, selMonth)} total days for {monthLabel}.
-                  Fill in attendance columns, then upload below.
+                  Fill in attendance columns, then upload below. Already have your own file? Skip straight to Step 2.
                 </p>
                 <button
                   onClick={handleTemplateDownload}
@@ -707,8 +708,8 @@ export default function AttendancePage() {
                 )}
               </div>
 
-              {/* Step 2: Upload + validate */}
-              {importStep >= 2 && (
+              {/* Step 2: Upload + validate — always available (template download is optional) */}
+              {importStep <= 3 && (
                 <div className={`rounded-xl border p-4 space-y-3 transition ${importStep === 2 ? "border-[#E5202E]/30 bg-[#FFF5F5]" : "border-[#E2E2DF] bg-[#F9F9F7]"}`}>
                   <p className="text-sm font-semibold text-[#1A1A1A]">Step 2 — Upload & validate</p>
 
@@ -727,15 +728,15 @@ export default function AttendancePage() {
                     ) : (
                       <>
                         <p className="text-sm text-[#5A5A5A]">
-                          Drag & drop CSV or <span className="text-[#E5202E] font-semibold">click to browse</span>
+                          Drag & drop a file or <span className="text-[#E5202E] font-semibold">click to browse</span>
                         </p>
-                        <p className="text-xs text-[#6B6B6B] mt-1">CSV files only</p>
+                        <p className="text-xs text-[#6B6B6B] mt-1">.csv or .xlsx</p>
                       </>
                     )}
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept=".csv"
+                      accept=".csv,.xlsx,.xls"
                       className="hidden"
                       onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
                     />
@@ -774,16 +775,31 @@ export default function AttendancePage() {
                     )}
                   </div>
 
-                  {/* Unmatched codes list */}
+                  {/* Unmatched codes list (skipped) */}
                   {validateResult.unmatched.length > 0 && (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-3 max-h-40 overflow-y-auto">
-                      <p className="text-xs font-semibold text-red-700 mb-2">Unmatched codes (will be skipped):</p>
+                      <p className="text-xs font-semibold text-red-700 mb-2">Unmatched rows (will be skipped):</p>
                       <ul className="space-y-1">
                         {validateResult.unmatched.map((u, i) => (
                           <li key={i} className="text-xs text-red-700">
                             Row {u.row}:{" "}
                             <span className="font-mono font-bold">{u.uid || "(blank)"}</span>
                             {u.name ? ` — ${u.name}` : ""} · {u.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Warnings list (still imported, but flagged) */}
+                  {validateResult.warnings.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 max-h-40 overflow-y-auto">
+                      <p className="text-xs font-semibold text-amber-700 mb-2">Warnings (these rows will still be imported):</p>
+                      <ul className="space-y-1">
+                        {validateResult.warnings.map((w, i) => (
+                          <li key={i} className="text-xs text-amber-700">
+                            Row {w.row}:{" "}
+                            <span className="font-mono font-bold">{w.emp_code}</span> · {w.issues.join("; ")}
                           </li>
                         ))}
                       </ul>
