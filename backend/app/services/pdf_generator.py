@@ -60,18 +60,46 @@ def num_to_words(amount: int) -> str:
     return " ".join(parts) + " Only"
 
 
-def generate_pdf(context: dict) -> bytes:
-    """Render payslip_template.html with Jinja2 and convert to PDF bytes via WeasyPrint."""
+def _weasy_html():
+    """Lazy WeasyPrint import with a clear error if system libs are missing."""
     try:
-        from weasyprint import HTML as WeasyHTML  # lazy import; needs pango/cairo at runtime
+        from weasyprint import HTML as WeasyHTML  # needs pango/cairo at runtime
     except OSError as exc:
         raise RuntimeError(
             "WeasyPrint could not load system libraries (pango/cairo). "
             "Install them via brew (macOS) or apt (Debian) and retry. "
             f"Details: {exc}"
         ) from exc
+    return WeasyHTML
 
+
+def _render_html(template_name: str, context: dict) -> str:
     env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)))
-    template = env.get_template("payslip_template.html")
-    html_string = template.render(**context, logo_b64=_logo_b64())
+    template = env.get_template(template_name)
+    return template.render(**context, logo_b64=_logo_b64())
+
+
+def generate_pdf(context: dict) -> bytes:
+    """Render payslip_template.html with Jinja2 and convert to PDF bytes via WeasyPrint."""
+    WeasyHTML = _weasy_html()
+    html_string = _render_html("payslip_template.html", context)
+    return WeasyHTML(string=html_string, base_url=str(_TEMPLATES_DIR)).write_pdf()
+
+
+def generate_bulk_pdf(contexts: list[dict]) -> bytes:
+    """Render one payslip per context and merge them into a single PDF (one per page)."""
+    WeasyHTML = _weasy_html()
+    docs = [
+        WeasyHTML(string=_render_html("payslip_template.html", ctx),
+                  base_url=str(_TEMPLATES_DIR)).render()
+        for ctx in contexts
+    ]
+    pages = [page for doc in docs for page in doc.pages]
+    return docs[0].copy(pages).write_pdf()
+
+
+def generate_salary_sheet_pdf(context: dict) -> bytes:
+    """Render the A3-landscape salary-sheet register to PDF bytes."""
+    WeasyHTML = _weasy_html()
+    html_string = _render_html("salary_sheet_template.html", context)
     return WeasyHTML(string=html_string, base_url=str(_TEMPLATES_DIR)).write_pdf()

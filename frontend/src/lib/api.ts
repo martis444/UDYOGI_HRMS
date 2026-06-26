@@ -430,6 +430,31 @@ export async function apiDownloadEmployeeExport(params?: Record<string, string>)
   URL.revokeObjectURL(url);
 }
 
+function _saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export async function apiDownloadBulkPayslips(entity_id: string, year: number, month: number) {
+  const response = await api.get("/api/payslip/bulk-pdf", {
+    params: { entity_id, year, month }, responseType: "blob",
+  });
+  _saveBlob(response.data as Blob, `payslips_${entity_id}_${year}_${String(month).padStart(2, "0")}.pdf`);
+}
+
+export async function apiDownloadSalarySheet(entity_id: string, year: number, month: number) {
+  const response = await api.get("/api/payslip/salary-sheet", {
+    params: { entity_id, year, month }, responseType: "blob",
+  });
+  _saveBlob(response.data as Blob, `salary_sheet_${entity_id}_${year}_${String(month).padStart(2, "0")}.pdf`);
+}
+
 export async function apiResetPassword(emp_code: string) {
   const { data } = await api.post("/api/admin/reset-password", { emp_code });
   return data;

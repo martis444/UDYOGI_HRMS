@@ -15,7 +15,9 @@ from app.models.employee import (
 )
 from app.services.payroll_engine import compute_payroll, process_payroll_month
 from app.services.leave_engine import resolve_leave_balance
-from app.services.pdf_generator import generate_pdf, num_to_words
+from app.services.pdf_generator import (
+    generate_pdf, generate_bulk_pdf, generate_salary_sheet_pdf, num_to_words,
+)
 from app.services.salary_resolver import get_structure_for_period
 
 router = APIRouter()
@@ -264,6 +266,128 @@ def get_payslip_pdf(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+def _entity_payroll_rows(db, entity_id, year, month):
+    """Active-employee payroll rows for an entity/month, ordered by name."""
+    return (
+        db.query(PayrollMonth)
+        .join(Employee, Employee.emp_code == PayrollMonth.emp_code)
+        .filter(
+            Employee.entity_id == entity_id,
+            PayrollMonth.year == year,
+            PayrollMonth.month == month,
+        )
+        .order_by(Employee.name)
+        .all()
+    )
+
+
+def _assert_entity_admin_scope(db, current_user, entity_id):
+    if current_user.role == "entity_admin":
+        my_entity = (
+            db.query(Employee.entity_id)
+            .filter(Employee.emp_code == current_user.emp_code)
+            .scalar()
+        )
+        if entity_id != my_entity:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+
+def _contexts_for_month(db, current_user, entity_id, year, month):
+    """Build the payslip context for every employee in the entity/month. Unlocked
+    rows are recomputed first (so the latest salary/attendance shows); locked stay frozen."""
+    pms = _entity_payroll_rows(db, entity_id, year, month)
+    if not pms:
+        raise HTTPException(status_code=404, detail="No payroll rows for this entity/month. Process payroll first.")
+    contexts = []
+    for pm in pms:
+        if pm.status != "locked":
+            pm = process_payroll_month(pm.emp_code, year, month, db, generated_by=current_user.emp_code)
+        contexts.append(_build_response(pm, db))
+    return contexts
+
+
+@router.get("/bulk-pdf")
+def get_bulk_payslip_pdf(
+    entity_id: str = Query(...),
+    year:      int = Query(...),
+    month:     int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin", "entity_admin")),
+):
+    """All employees' payslips for an entity/month merged into one PDF (one per page)."""
+    _assert_entity_admin_scope(db, current_user, entity_id)
+    contexts = _contexts_for_month(db, current_user, entity_id, year, month)
+    pdf_bytes = generate_bulk_pdf(contexts)
+
+    db.add(AuditLog(
+        user_code=current_user.emp_code, action="PAYSLIP_BULK_EXPORT",
+        table_name="payroll_months", record_id=f"{entity_id}:{year}-{month:02d}",
+        new_values={"count": len(contexts)},
+    ))
+    db.commit()
+
+    filename = f"payslips_{entity_id}_{year}_{month:02d}.pdf"
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/salary-sheet")
+def get_salary_sheet_pdf(
+    entity_id: str = Query(...),
+    year:      int = Query(...),
+    month:     int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin", "entity_admin")),
+):
+    """A3-landscape payroll register for an entity/month (all employees in rows)."""
+    _assert_entity_admin_scope(db, current_user, entity_id)
+    contexts = _contexts_for_month(db, current_user, entity_id, year, month)
+
+    _keys = ("basic", "hra", "spl", "cca", "lta", "gross", "pf", "esic", "pt",
+             "ld", "loan", "total_ded", "net", "pf_ern", "esic_ern")
+    totals = {k: 0 for k in _keys}
+    rows = []
+    for c in contexts:
+        row = {
+            "emp_code": c["emp_code"], "name": c["name"], "designation": c["designation"],
+            "pay_days": c["pay_days"] if c["pay_days"] is not None else c["total_days"],
+            "basic": c["basic_amount"], "hra": c["hra_amount"], "spl": c["spl_amount"],
+            "cca": c["cca_amount"], "lta": c["lt_amount"], "gross": c["total_earnings"],
+            "pf": c["pf_emp"], "esic": c["esic_emp"], "pt": c["pt"], "ld": c["ld"],
+            "loan": c["loan_emi"], "total_ded": c["total_deduction"], "net": c["net_pay"],
+            "pf_ern": c["pf_ern"], "esic_ern": c["esic_ern"],
+        }
+        rows.append(row)
+        for k in _keys:
+            totals[k] += row[k]
+
+    first = contexts[0]
+    context = {
+        "entity_name":   first["entity_name"],
+        "location_city": None,   # a sheet can span locations
+        "month_year":    f"{_MONTH_NAMES.get(month, '').upper()} - {year}",
+        "rows":          rows,
+        "totals":        totals,
+        "generated_on":  datetime.now(timezone.utc).strftime("%d-%b-%Y %H:%M UTC"),
+    }
+    pdf_bytes = generate_salary_sheet_pdf(context)
+
+    db.add(AuditLog(
+        user_code=current_user.emp_code, action="SALARY_SHEET_EXPORT",
+        table_name="payroll_months", record_id=f"{entity_id}:{year}-{month:02d}",
+        new_values={"count": len(rows)},
+    ))
+    db.commit()
+
+    filename = f"salary_sheet_{entity_id}_{year}_{month:02d}.pdf"
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 

@@ -12,11 +12,12 @@ import { entityColor } from "@/lib/entities";
 import {
   apiGetPayrollMonths, apiProcessMonth, apiLockPayroll, apiUnlockPayroll,
   apiGetEmployees, apiGetSalaryHistory,
+  apiDownloadBulkPayslips, apiDownloadSalarySheet,
   type PayrollMonthRow, type SalaryStructureRow,
 } from "@/lib/api";
 import {
   Lock, Unlock, Play, Loader2, AlertCircle, CheckCircle2,
-  TrendingUp, History, Search, Wallet,
+  TrendingUp, History, Search, Wallet, FileText, Sheet,
 } from "lucide-react";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -135,6 +136,7 @@ function MonthlyRun({ user, isSuperAdmin, isAdmin, showToast }: Importable & { i
   const [rows, setRows] = useState<PayrollMonthRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string>("");
+  const [dlKey, setDlKey] = useState<string>("");
 
   // "Run a new month" controls
   const [newEntity, setNewEntity] = useState<string>(isSuperAdmin ? "UPPL" : user.entity_id);
@@ -189,6 +191,22 @@ function MonthlyRun({ user, isSuperAdmin, isAdmin, showToast }: Importable & { i
       showToast("err", errMsg(e, "Lock failed"));
     } finally {
       setBusyKey("");
+    }
+  };
+
+  const doDownload = async (
+    kind: "payslips" | "sheet",
+    r: { entity_id: string; year: number; month: number },
+  ) => {
+    const key = `${rowKey(r)}-${kind}`;
+    setDlKey(key);
+    try {
+      if (kind === "payslips") await apiDownloadBulkPayslips(r.entity_id, r.year, r.month);
+      else await apiDownloadSalarySheet(r.entity_id, r.year, r.month);
+    } catch (e: unknown) {
+      showToast("err", errMsg(e, "Download failed"));
+    } finally {
+      setDlKey("");
     }
   };
 
@@ -302,6 +320,26 @@ function MonthlyRun({ user, isSuperAdmin, isAdmin, showToast }: Importable & { i
                       </td>
                       <td className="px-4 py-3.5 pr-5">
                         <div className="flex items-center justify-end gap-2">
+                          {(r.status === "processed" || r.status === "locked") && (
+                            <>
+                              <button
+                                onClick={() => doDownload("payslips", r)}
+                                disabled={dlKey === `${rowKey(r)}-payslips`}
+                                title="Download all payslips as one PDF"
+                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-white border border-[#E2E2DF] text-[#1A1A1A] hover:bg-[#F4F4F2] rounded-lg transition font-medium disabled:opacity-60"
+                              >
+                                {dlKey === `${rowKey(r)}-payslips` ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} Payslips
+                              </button>
+                              <button
+                                onClick={() => doDownload("sheet", r)}
+                                disabled={dlKey === `${rowKey(r)}-sheet`}
+                                title="Download salary sheet (A3 PDF, for print)"
+                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-white border border-[#E2E2DF] text-[#1A1A1A] hover:bg-[#F4F4F2] rounded-lg transition font-medium disabled:opacity-60"
+                              >
+                                {dlKey === `${rowKey(r)}-sheet` ? <Loader2 size={12} className="animate-spin" /> : <Sheet size={12} />} Salary sheet
+                              </button>
+                            </>
+                          )}
                           {r.status !== "locked" && (
                             <button
                               onClick={() => setConfirm({ kind: "process", row: r })}

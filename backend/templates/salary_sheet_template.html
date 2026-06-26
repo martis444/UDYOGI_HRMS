@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A3 landscape; margin: 10mm 8mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; color: #111; margin: 0; font-size: 8.5px; }
+
+  .head { display: flex; align-items: center; gap: 10px; border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 8px; }
+  .head img { height: 34px; }
+  .head .title { flex: 1; }
+  .head h1 { margin: 0; font-size: 15px; }
+  .head .sub { font-size: 10px; color: #444; margin-top: 2px; }
+  .head .period { text-align: right; font-size: 11px; font-weight: bold; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 0.5px solid #999; padding: 2.5px 3px; text-align: right; white-space: nowrap; }
+  th { background: #ececec; font-size: 8px; text-transform: uppercase; letter-spacing: 0.2px; }
+  td.l, th.l { text-align: left; }
+  thead { display: table-header-group; }   /* repeat header on each page */
+  tbody tr:nth-child(even) td { background: #fafafa; }
+
+  .grp-earn { background: #eef6ee !important; }
+  .grp-ded  { background: #fdeeee !important; }
+
+  tfoot td { font-weight: bold; background: #e2e2e2; border-top: 1.2px solid #111; }
+  .net { font-weight: bold; }
+
+  .foot { margin-top: 8px; display: flex; justify-content: space-between; font-size: 8.5px; color: #555; }
+</style>
+</head>
+<body>
+  <div class="head">
+    {% if logo_b64 %}<img src="{{ logo_b64 }}" alt="logo">{% endif %}
+    <div class="title">
+      <h1>{{ entity_name }}</h1>
+      <div class="sub">Salary Sheet / Payroll Register{% if location_city %} — {{ location_city }}{% endif %}</div>
+    </div>
+    <div class="period">{{ month_year }}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th class="l">Emp Code</th>
+        <th class="l">Name</th>
+        <th class="l">Designation</th>
+        <th>Pay Days</th>
+        <th class="grp-earn">Basic</th>
+        <th class="grp-earn">HRA</th>
+        <th class="grp-earn">SPL</th>
+        <th class="grp-earn">CCA</th>
+        <th class="grp-earn">LTA</th>
+        <th class="grp-earn">Gross</th>
+        <th class="grp-ded">PF</th>
+        <th class="grp-ded">ESIC</th>
+        <th class="grp-ded">PT</th>
+        <th class="grp-ded">LD</th>
+        <th class="grp-ded">Loan</th>
+        <th class="grp-ded">Tot. Ded</th>
+        <th>Net Pay</th>
+        <th>PF (Empr)</th>
+        <th>ESIC (Empr)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td class="l">{{ r.emp_code }}</td>
+        <td class="l">{{ r.name }}</td>
+        <td class="l">{{ r.designation or "" }}</td>
+        <td>{{ r.pay_days }}</td>
+        <td>{{ "{:,}".format(r.basic) }}</td>
+        <td>{{ "{:,}".format(r.hra) }}</td>
+        <td>{{ "{:,}".format(r.spl) }}</td>
+        <td>{{ "{:,}".format(r.cca) }}</td>
+        <td>{{ "{:,}".format(r.lta) }}</td>
+        <td>{{ "{:,}".format(r.gross) }}</td>
+        <td>{{ "{:,}".format(r.pf) }}</td>
+        <td>{{ "{:,}".format(r.esic) }}</td>
+        <td>{{ "{:,}".format(r.pt) }}</td>
+        <td>{{ "{:,}".format(r.ld) }}</td>
+        <td>{{ "{:,}".format(r.loan) }}</td>
+        <td>{{ "{:,}".format(r.total_ded) }}</td>
+        <td class="net">{{ "{:,}".format(r.net) }}</td>
+        <td>{{ "{:,}".format(r.pf_ern) }}</td>
+        <td>{{ "{:,}".format(r.esic_ern) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="4" class="l">TOTAL — {{ rows|length }} employees</td>
+        <td></td>
+        <td>{{ "{:,}".format(totals.basic) }}</td>
+        <td>{{ "{:,}".format(totals.hra) }}</td>
+        <td>{{ "{:,}".format(totals.spl) }}</td>
+        <td>{{ "{:,}".format(totals.cca) }}</td>
+        <td>{{ "{:,}".format(totals.lta) }}</td>
+        <td>{{ "{:,}".format(totals.gross) }}</td>
+        <td>{{ "{:,}".format(totals.pf) }}</td>
+        <td>{{ "{:,}".format(totals.esic) }}</td>
+        <td>{{ "{:,}".format(totals.pt) }}</td>
+        <td>{{ "{:,}".format(totals.ld) }}</td>
+        <td>{{ "{:,}".format(totals.loan) }}</td>
+        <td>{{ "{:,}".format(totals.total_ded) }}</td>
+        <td class="net">{{ "{:,}".format(totals.net) }}</td>
+        <td>{{ "{:,}".format(totals.pf_ern) }}</td>
+        <td>{{ "{:,}".format(totals.esic_ern) }}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="foot">
+    <span>Generated {{ generated_on }}</span>
+    <span>{{ entity_name }} — confidential</span>
+  </div>
+</body>
+</html>
