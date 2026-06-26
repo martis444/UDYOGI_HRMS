@@ -227,9 +227,26 @@ def process_payroll_month(
     pay_days = int(existing.pay_days) if csv_authoritative else max(0, divisor - lop_days)
     payable_factor = Decimal(pay_days) / Decimal(divisor)
 
-    # Earnings prorate by payable_factor; deductions stay on the full statutory
-    # gross (rule from 13.9). other_allowance is RECORD-ONLY now (kept as a snapshot
-    # on the row, but never added to take-home).
+    # PF/ESIC are charged on the EARNED (paid) amount, not the full committed amount:
+    # when LOP reduces pay, the contributions reduce proportionally (the /30 factor
+    # carries the unpaid days). Caps (PF ₹1,800/₹2,340) and ESIC eligibility (on the
+    # committed gross ≤ ₹21,000) are unchanged. PT stays on the committed-gross slab.
+    f          = float(payable_factor)
+    basic_paid = float(data["basic"]) * f
+    gross_paid = float(data["gross"]) * f
+    if data["pf_emp"] or data["pf_ern"]:               # PF applicable
+        data["pf_emp"] = min(round(basic_paid * 0.12), 1800)
+        data["pf_ern"] = min(round(basic_paid * 0.13), 2340)
+    if float(data["gross"]) <= 21000 and gross_paid > 0:   # ESIC eligible (committed gross)
+        data["esic_emp"] = math.ceil(gross_paid * 0.0075)
+        data["esic_ern"] = math.ceil(gross_paid * 0.0325)
+    data["total_deduction"] = (
+        data["pf_emp"] + data["esic_emp"] + int(data["pt"])
+        + data["loan_emi"] + data["other_deduction"] + data["ld"]
+    )
+
+    # Earnings prorate by payable_factor; deductions already reflect the paid amount.
+    # other_allowance is RECORD-ONLY (a snapshot on the row, never in take-home).
     stat_earnings  = Decimal(str(data["gross"]))             # basic+hra+spl+cca+lt
     total_ded      = Decimal(str(data["total_deduction"]))
     total_earnings = stat_earnings * payable_factor
