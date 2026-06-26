@@ -333,7 +333,7 @@ function MonthlyRun({ user, isSuperAdmin, isAdmin, showToast }: Importable & { i
                               <button
                                 onClick={() => doDownload("sheet", r)}
                                 disabled={dlKey === `${rowKey(r)}-sheet`}
-                                title="Download salary sheet (A3 PDF, for print)"
+                                title="Download salary sheet (Excel .xlsx)"
                                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-white border border-[#E2E2DF] text-[#1A1A1A] hover:bg-[#F4F4F2] rounded-lg transition font-medium disabled:opacity-60"
                               >
                                 {dlKey === `${rowKey(r)}-sheet` ? <Loader2 size={12} className="animate-spin" /> : <Sheet size={12} />} Salary sheet

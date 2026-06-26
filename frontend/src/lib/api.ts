@@ -452,7 +452,7 @@ export async function apiDownloadSalarySheet(entity_id: string, year: number, mo
   const response = await api.get("/api/payslip/salary-sheet", {
     params: { entity_id, year, month }, responseType: "blob",
   });
-  _saveBlob(response.data as Blob, `salary_sheet_${entity_id}_${year}_${String(month).padStart(2, "0")}.pdf`);
+  _saveBlob(response.data as Blob, `salary_sheet_${entity_id}_${year}_${String(month).padStart(2, "0")}.xlsx`);
 }
 
 export async function apiResetPassword(emp_code: string) {

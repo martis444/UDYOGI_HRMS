@@ -98,8 +98,84 @@ def generate_bulk_pdf(contexts: list[dict]) -> bytes:
     return docs[0].copy(pages).write_pdf()
 
 
-def generate_salary_sheet_pdf(context: dict) -> bytes:
-    """Render the A3-landscape salary-sheet register to PDF bytes."""
-    WeasyHTML = _weasy_html()
-    html_string = _render_html("salary_sheet_template.html", context)
-    return WeasyHTML(string=html_string, base_url=str(_TEMPLATES_DIR)).write_pdf()
+def generate_salary_sheet_xlsx(context: dict) -> bytes:
+    """Build the salary-sheet payroll register as an .xlsx workbook (bytes).
+
+    context: {entity_name, month_year, generated_on, rows:[...], totals:{...}}
+    Each row dict carries the prorated, paid-amount figures from _build_response.
+    """
+    import io as _io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    headers = ["#", "Emp Code", "Name", "Designation", "Pay Days", "Basic", "HRA",
+               "SPL", "CCA", "LTA", "Gross", "PF", "ESIC", "PT", "LD", "Loan",
+               "Total Ded", "Net Pay", "PF (Empr)", "ESIC (Empr)"]
+    # numeric data keys in column order, starting at the "Pay Days" column (E).
+    num_keys = ["pay_days", "basic", "hra", "spl", "cca", "lta", "gross", "pf",
+                "esic", "pt", "ld", "loan", "total_ded", "net", "pf_ern", "esic_ern"]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Salary Sheet"
+
+    ws.append([context["entity_name"]])
+    ws.append([f"Salary Sheet — {context['month_year']}"])
+    ws.append([f"Generated {context['generated_on']}"])
+    ws.append([])
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"].font = Font(bold=True, size=11)
+    ws["A3"].font = Font(italic=True, size=9, color="666666")
+
+    header_row = ws.max_row + 1
+    ws.append(headers)
+    head_fill = PatternFill("solid", fgColor="E2E2E2")
+    thin = Side(style="thin", color="BBBBBB")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for c in ws[header_row]:
+        c.font = Font(bold=True, size=9)
+        c.fill = head_fill
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c.border = border
+
+    for i, r in enumerate(context["rows"], start=1):
+        ws.append([i, r["emp_code"], r["name"], r.get("designation") or ""]
+                  + [r[k] for k in num_keys])
+
+    t = context["totals"]
+    # pay_days isn't summed (blank); the rest are column totals.
+    total_row = ["", "", f"TOTAL — {len(context['rows'])} employees", "", ""]
+    total_row += [t[k] for k in num_keys[1:]]
+    ws.append(total_row)
+
+    # number format + borders for the numeric block (cols E..T) across data + total
+    first_data, last_row = header_row + 1, ws.max_row
+    for row in ws.iter_rows(min_row=first_data, max_row=last_row, min_col=5, max_col=20):
+        for c in row:
+            if isinstance(c.value, (int, float)):
+                c.number_format = "#,##0"
+    for row in ws.iter_rows(min_row=header_row, max_row=last_row, min_col=1, max_col=20):
+        for c in row:
+            c.border = border
+    for c in ws[last_row]:
+        c.font = Font(bold=True)
+        c.fill = PatternFill("solid", fgColor="EFEFEF")
+
+    widths = [4, 12, 22, 18, 9] + [10] * 15
+    from openpyxl.utils import get_column_letter
+    for idx, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(idx)].width = w
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+
+    # Print setup: A3 landscape, fit to one page wide, repeat header row.
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = 8  # A3
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    from openpyxl.worksheet.properties import PageSetupProperties
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+    ws.print_title_rows = f"{header_row}:{header_row}"
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

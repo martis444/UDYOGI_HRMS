@@ -16,7 +16,7 @@ from app.models.employee import (
 from app.services.payroll_engine import compute_payroll, process_payroll_month
 from app.services.leave_engine import resolve_leave_balance
 from app.services.pdf_generator import (
-    generate_pdf, generate_bulk_pdf, generate_salary_sheet_pdf, num_to_words,
+    generate_pdf, generate_bulk_pdf, generate_salary_sheet_xlsx, num_to_words,
 )
 from app.services.salary_resolver import get_structure_for_period
 
@@ -376,7 +376,7 @@ def get_salary_sheet_pdf(
         "totals":        totals,
         "generated_on":  datetime.now(timezone.utc).strftime("%d-%b-%Y %H:%M UTC"),
     }
-    pdf_bytes = generate_salary_sheet_pdf(context)
+    xlsx_bytes = generate_salary_sheet_xlsx(context)
 
     db.add(AuditLog(
         user_code=current_user.emp_code, action="SALARY_SHEET_EXPORT",
@@ -385,9 +385,10 @@ def get_salary_sheet_pdf(
     ))
     db.commit()
 
-    filename = f"salary_sheet_{entity_id}_{year}_{month:02d}.pdf"
+    filename = f"salary_sheet_{entity_id}_{year}_{month:02d}.xlsx"
     return Response(
-        content=pdf_bytes, media_type="application/pdf",
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
