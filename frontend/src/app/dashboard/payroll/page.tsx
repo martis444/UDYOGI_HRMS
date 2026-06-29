@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import GlassCard from "@/components/ui/GlassCard";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import SalaryHistoryTable from "@/components/salary/SalaryHistoryTable";
@@ -17,7 +18,7 @@ import {
 } from "@/lib/api";
 import {
   Lock, Unlock, Play, Loader2, AlertCircle, CheckCircle2,
-  TrendingUp, History, Search, Wallet, FileText, Sheet,
+  TrendingUp, History, Search, Wallet, FileText, Sheet, Upload,
 } from "lucide-react";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -538,6 +539,18 @@ function SalaryStructures({ user, isAdmin, showToast, initialEmp }: Importable &
 
   return (
     <div className="space-y-5">
+      {isAdmin && (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-[#5A5A5A] text-sm">Apply increments to one employee, or many at once via CSV.</p>
+          <Link
+            href="/dashboard/payroll/bulk-increment"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm bg-[#1A1A1A] text-white rounded-xl hover:bg-black transition font-semibold"
+          >
+            <Upload size={14} /> Bulk increment
+          </Link>
+        </div>
+      )}
+
       {/* Employee picker */}
       <GlassCard className="p-4 relative z-10">
         <label className="block text-xs font-semibold text-[#5A5A5A] mb-1.5">Employee</label>

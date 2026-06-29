@@ -419,6 +419,42 @@ export async function apiBulkImportCommit(rows: unknown[], filename: string) {
   return data;
 }
 
+// ─── Bulk increment ───────────────────────────────────────────────────────────
+
+export interface BulkIncrementRow {
+  emp_code: string;
+  name?: string;
+  entity_id?: string;
+  mode: string;
+  value: string | number;
+  effective_from: string;
+  reason: string;
+  new_values: Record<string, number>;
+  current_gross: number;
+  new_gross: number;
+}
+
+export async function apiBulkIncrementValidate(file: File): Promise<{
+  valid: BulkIncrementRow[];
+  errors: { emp_code: string; error: string }[];
+  total_valid: number;
+  total_error: number;
+}> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await api.post("/api/employees/bulk-increment/validate", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function apiBulkIncrementCommit(
+  rows: BulkIncrementRow[],
+): Promise<{ applied: number; emp_codes: string[] }> {
+  const { data } = await api.post("/api/employees/bulk-increment/commit", { rows });
+  return data;
+}
+
 // ─── File downloads ───────────────────────────────────────────────────────────
 
 export async function apiDownloadEmployeeExport(params?: Record<string, string>) {

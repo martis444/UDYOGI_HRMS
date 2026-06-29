@@ -31,7 +31,7 @@ from app.services.import_service import (
     parse_upload_file,
     validate_import_rows,
 )
-from app.services.increment_service import apply_increment
+from app.services.increment_service import apply_increment, prepare_increment_row
 from app.services import salary_resolver
 from app.services.leave_engine import ensure_leave_rows
 
@@ -895,6 +895,84 @@ def apply_salary_increment(
         new_struct.spl, new_struct.cca, new_struct.leave_travel,
     )
     return {"structure": result, "gross": result["gross"]}
+
+
+# ---------------------------------------------------------------------------
+# Bulk increment
+# ---------------------------------------------------------------------------
+
+class BulkIncrementCommitBody(BaseModel):
+    rows: list[dict]
+
+
+@router.post("/bulk-increment/validate")
+async def bulk_increment_validate(
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_role("super_admin", "entity_admin")),
+    db: Session = Depends(get_db),
+):
+    """Dry-run: parse + validate a bulk-increment CSV/XLSX. No DB writes.
+
+    Columns: emp_code, effective_from (1st of a month), reason, mode, value.
+    mode = pct | flat | abs_basic | abs_hra | abs_spl | abs_cca | abs_lta | abs_other.
+    """
+    rows = await parse_upload_file(file)
+    actor_entity = _actor_entity_id(current_user)
+    prepared = [prepare_increment_row(r, db, actor_entity) for r in rows]
+    valid = [p for p in prepared if "error" not in p]
+    errors = [
+        {"emp_code": p.get("emp_code") or "—", "error": p["error"]}
+        for p in prepared if "error" in p
+    ]
+    return {
+        "valid": valid,
+        "errors": errors,
+        "total_valid": len(valid),
+        "total_error": len(errors),
+    }
+
+
+@router.post("/bulk-increment/commit")
+def bulk_increment_commit(
+    body: BulkIncrementCommitBody,
+    req: Request,
+    current_user: User = Depends(require_role("super_admin", "entity_admin")),
+    db: Session = Depends(get_db),
+):
+    """Apply previously-validated bulk increments in ONE transaction (all or nothing)."""
+    if not body.rows:
+        raise HTTPException(status_code=400, detail="No increments to apply")
+
+    actor_entity = _actor_entity_id(current_user)
+    applied: list[str] = []
+    try:
+        for r in body.rows:
+            emp_code = (r.get("emp_code") or "").strip()
+            if not emp_code:
+                raise ValueError("a row is missing emp_code")
+            # entity-scope re-check (defence in depth — never trust the client)
+            if actor_entity is not None:
+                emp = db.query(Employee).filter(Employee.emp_code == emp_code).first()
+                if emp is None or emp.entity_id != actor_entity:
+                    raise ValueError(f"{emp_code}: access denied")
+            new_values = {k: Decimal(str(v)) for k, v in (r.get("new_values") or {}).items()}
+            apply_increment(
+                db,
+                emp_code=emp_code,
+                effective_from=date.fromisoformat(r["effective_from"]),
+                new_values=new_values,
+                reason=(r.get("reason") or "increment"),
+                actor_emp_code=current_user.emp_code,
+            )
+            applied.append(emp_code)
+    except (ValueError, KeyError) as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=400, detail=f"Increment failed — nothing was applied: {exc}"
+        )
+
+    db.commit()
+    return {"applied": len(applied), "emp_codes": applied}
 
 
 @router.get("/{emp_code}/salary-history")
