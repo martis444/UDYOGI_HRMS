@@ -29,14 +29,14 @@ ALLOWED_COLUMNS = [
     "department_id", "grade_id", "shift_id", "designation",
     "location_id", "reporting_mgr_code", "basic", "hra",
     "spl", "cca", "ctc_annual", "leave_travel", "medical", "other_earning",
-    "other_allowance", "bank_name", "ifsc",
+    "bank_name", "ifsc",
     "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
     "confirmation_date", "resignation_date",
 ]
 _ALLOWED_SET = set(ALLOWED_COLUMNS)
 _LOCKED_SET = {"emp_code", "pan", "aadhaar_enc", "bank_acc_enc", "entity_id"}
 _NUMERIC_COLS = {"basic", "hra", "spl", "cca", "ctc_annual",
-                 "leave_travel", "medical", "other_earning", "other_allowance"}
+                 "leave_travel", "medical", "other_earning"}
 _INT_COLS = {"department_id", "grade_id", "shift_id"}
 _DATE_COLS = {"resignation_date", "confirmation_date"}
 
@@ -305,7 +305,7 @@ def master_data_export(
         "entity_id", "location_id", "location_city", "location_state",
         "department", "division", "designation", "grade", "reporting_mgr_code",
         "shift_id", "ctc_annual", "basic", "hra", "spl", "cca",
-        "leave_travel", "medical", "other_earning", "other_allowance",
+        "leave_travel", "medical", "other_earning",
         "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
         "monthly_gross", "pf_applicable", "esic_applicable", "pt_applicable",
         "pan", "aadhaar", "uan", "esic_no", "bank_name", "ifsc",
@@ -359,7 +359,6 @@ def master_data_export(
             "leave_travel": str(emp.leave_travel) if emp.leave_travel else "",
             "medical": str(emp.medical) if emp.medical else "",
             "other_earning": str(emp.other_earning) if emp.other_earning else "",
-            "other_allowance": str(emp.other_allowance) if emp.other_allowance else "",
             "profit_center_code": emp.profit_center_code or "",
             "profit_center_name": emp.profit_center_name or "",
             "cost_center_code": emp.cost_center_code or "",

@@ -173,11 +173,12 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
       const body: Record<string, unknown> = {};
       const intFields = ["department_id", "grade_id", "shift_id"] as (keyof Emp)[];
       const numFields = ["basic", "hra", "spl", "cca", "leave_travel", "ctc_annual",
-        "medical", "other_earning", "other_allowance"] as (keyof Emp)[];
-      // Never sent: immutable, computed, or auto/removed statutory flags.
-      // retirement_date is a derived (DOB+60) read-only column.
+        "medical", "other_earning"] as (keyof Emp)[];
+      // Never sent: immutable, computed, derived columns. pf_applicable &
+      // esic_applicable ARE editable (the statutory-deduction toggles below);
+      // pt_applicable stays auto. retirement_date is derived (DOB+60).
       const skip = new Set(["emp_code", "entity_id", "monthly_gross", "retirement_date",
-        "pf_applicable", "pt_applicable", "esic_applicable"]);
+        "pt_applicable"]);
       for (const [k, v] of Object.entries(editForm)) {
         if (skip.has(k)) continue;
         if (v === "" || v === null || v === undefined) continue; // skip blank
@@ -314,6 +315,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
           <InfoRow label="DOJ" value={emp.doj} />
           <InfoRow label="Mobile" value={emp.mobile} />
           <InfoRow label="Monthly gross" value={emp.monthly_gross ? `₹${parseFloat(emp.monthly_gross).toLocaleString("en-IN")}` : undefined} />
+          <InfoRow label="PF applicable" value={emp.pf_applicable} />
           <InfoRow label="ESIC applicable" value={emp.esic_applicable} />
         </div>
       </GlassCard>
@@ -376,9 +378,8 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
             <SectionTitle>Salary</SectionTitle>
             <div className="p-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
               {(["basic", "hra", "spl", "cca", "leave_travel", "ctc_annual", "medical", "other_earning"] as (keyof Emp)[]).map((f) => (
-                <InfoRow key={f} label={f === "leave_travel" ? "LTA" : f.toUpperCase().replace("_", " ")} value={emp[f] ? `₹${parseFloat(String(emp[f])).toLocaleString("en-IN")}` : undefined} />
+                <InfoRow key={f} label={f === "leave_travel" ? "LTA" : f === "other_earning" ? "Other earning" : f.toUpperCase().replace("_", " ")} value={emp[f] ? `₹${parseFloat(String(emp[f])).toLocaleString("en-IN")}` : undefined} />
               ))}
-              <InfoRow label="Other allowance (record only)" value={emp.other_allowance ? `₹${parseFloat(String(emp.other_allowance)).toLocaleString("en-IN")}` : undefined} />
             </div>
           </GlassCard>
 
@@ -556,8 +557,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
               </EditField>
               {([
                 { key: "medical" as const, label: "Medical" },
-                { key: "other_earning" as const, label: "Other earning" },
-                { key: "other_allowance" as const, label: "Other allowance (record only)" },
+                { key: "other_earning" as const, label: "Other earning (paid)" },
               ]).map(({ key, label }) => (
                 <EditField key={key} label={label}>
                   <div className="relative">
@@ -576,6 +576,41 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
                 </span>
               </div>
             </div>
+          </GlassCard>
+
+          {/* Statutory deductions */}
+          <GlassCard>
+            <SectionTitle>Statutory deductions</SectionTitle>
+            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <label className="flex items-center justify-between gap-3 p-3 rounded-xl border border-[#E2E2DF] cursor-pointer">
+                <div>
+                  <p className="text-sm font-medium text-[#1A1A1A]">Provident Fund (PF)</p>
+                  <p className="text-xs text-[#6B6B6B]">Deduct employee PF — 12% of basic, cap ₹1,800</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={editForm.pf_applicable ?? true}
+                  onChange={(e) => setEditField("pf_applicable", e.target.checked)}
+                  className="w-5 h-5 accent-[#E5202E] shrink-0"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 p-3 rounded-xl border border-[#E2E2DF] cursor-pointer">
+                <div>
+                  <p className="text-sm font-medium text-[#1A1A1A]">ESIC</p>
+                  <p className="text-xs text-[#6B6B6B]">Deduct ESIC — 0.75%, only if gross ≤ ₹21,000</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={editForm.esic_applicable ?? true}
+                  onChange={(e) => setEditField("esic_applicable", e.target.checked)}
+                  className="w-5 h-5 accent-[#E5202E] shrink-0"
+                />
+              </label>
+            </div>
+            <p className="px-5 pb-5 text-xs text-[#6B6B6B]">
+              Turn a deduction off only for genuinely exempt employees — PF/ESIC are statutory for eligible
+              staff. ESIC never applies above ₹21,000 gross regardless of this switch.
+            </p>
           </GlassCard>
 
           {/* Edit actions */}

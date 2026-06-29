@@ -24,6 +24,7 @@ interface PayslipData {
   cca: number;
   leave_travel: number;
   other_allowance: number;
+  other_earning: number;
   gross: number;
   // prorated rate/amount pairs
   basic_rate: number;
@@ -246,15 +247,15 @@ function PayslipDocument({ data }: { data: PayslipData }) {
               )}
             </tr>
 
-            {/* Row 6: OTHER ALLOW (conditional) | OTHER DED (conditional) — ad-hoc monthly adjustments */}
-            {(data.other_allowance > 0 || data.other_deduction > 0) && (
+            {/* Row 6: OTHER EARNING (conditional) | OTHER DED (conditional) — Other Earning = fixed + per-month reward */}
+            {(data.other_earning > 0 || data.other_deduction > 0) && (
               <tr>
                 <td style={tdStyle}></td>
-                {data.other_allowance > 0 ? (
+                {data.other_earning > 0 ? (
                   <>
-                    <td style={tdStyle}>OTHER ALLOW</td>
+                    <td style={tdStyle}>OTHER EARNING</td>
                     <td style={{ ...tdStyle, ...amtStyle }}></td>
-                    <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.other_allowance)}</td>
+                    <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.other_earning)}</td>
                   </>
                 ) : (
                   <><td style={tdStyle}></td><td style={tdStyle}></td><td style={tdStyle}></td></>

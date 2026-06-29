@@ -37,7 +37,7 @@ type FormState = {
   category: string;
   // Salary
   basic: string; hra: string; spl: string; cca: string; leave_travel: string;
-  medical: string; other_earning: string; other_allowance: string;
+  medical: string; other_earning: string;
   ctc_annual: string;
   // Org costing
   profit_center_code: string; profit_center_name: string;
@@ -45,6 +45,7 @@ type FormState = {
   // Statutory
   pan: string; aadhaar: string; uan: string; esic_no: string;
   bank_name: string; bank_acc: string; ifsc: string;
+  pf_applicable: boolean; esic_applicable: boolean;
   // Address (full text only)
   present_addr: string; perm_addr: string;
   status: string; resignation_date: string; confirmation_date: string;
@@ -58,10 +59,11 @@ const EMPTY: FormState = {
   grade_id: "", shift_id: "", reporting_mgr_code: "",
   category: "staff",
   basic: "", hra: "", spl: "", cca: "", leave_travel: "",
-  medical: "", other_earning: "", other_allowance: "", ctc_annual: "",
+  medical: "", other_earning: "", ctc_annual: "",
   profit_center_code: "", profit_center_name: "", cost_center_code: "", cost_center_name: "",
   pan: "", aadhaar: "", uan: "", esic_no: "",
   bank_name: "", bank_acc: "", ifsc: "",
+  pf_applicable: true, esic_applicable: true,
   present_addr: "", perm_addr: "",
   status: "active", resignation_date: "", confirmation_date: "",
 };
@@ -166,7 +168,7 @@ export default function AddEmployeePage() {
         "present_addr", "perm_addr", "status", "resignation_date", "confirmation_date",
         "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
         "ctc_annual", "basic", "hra", "spl", "cca", "leave_travel",
-        "medical", "other_earning", "other_allowance",
+        "medical", "other_earning",
       ];
       for (const f of strFields) {
         const v = form[f];
@@ -176,7 +178,9 @@ export default function AddEmployeePage() {
       if (form.department_id) body.department_id = parseInt(form.department_id);
       if (form.grade_id) body.grade_id = parseInt(form.grade_id);
       if (form.shift_id) body.shift_id = parseInt(form.shift_id);
-      // Booleans always included
+      // Statutory-deduction toggles always included
+      body.pf_applicable = form.pf_applicable;
+      body.esic_applicable = form.esic_applicable;
 
       const result = await apiCreateEmployee(body);
       router.push(`/dashboard/employees/${result.emp_code}`);
@@ -398,16 +402,10 @@ export default function AddEmployeePage() {
                 <input type="number" min="0" step="0.01" value={form.medical} onChange={(e) => set("medical", e.target.value)} placeholder="0.00" className={`${INPUT} pl-7`} />
               </div>
             </Field>
-            <Field label="Other earning">
+            <Field label="Other earning" hint="Paid — added to net, outside PF/ESIC/PT base">
               <div className="relative">
                 <IndianRupee size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" />
                 <input type="number" min="0" step="0.01" value={form.other_earning} onChange={(e) => set("other_earning", e.target.value)} placeholder="0.00" className={`${INPUT} pl-7`} />
-              </div>
-            </Field>
-            <Field label="Other allowance" hint="Record only — not shown on payslip">
-              <div className="relative">
-                <IndianRupee size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" />
-                <input type="number" min="0" step="0.01" value={form.other_allowance} onChange={(e) => set("other_allowance", e.target.value)} placeholder="0.00" className={`${INPUT} pl-7`} />
               </div>
             </Field>
           </div>
@@ -455,6 +453,27 @@ export default function AddEmployeePage() {
               <input value={form.ifsc} onChange={(e) => set("ifsc", e.target.value.toUpperCase())} placeholder="SBIN0001234" maxLength={11} className={INPUT} />
             </Field>
           </div>
+
+          <p className="text-xs font-semibold text-[#5A5A5A] uppercase tracking-wide mt-5 mb-3">Statutory deductions</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <label className="flex items-center justify-between gap-3 p-3 rounded-xl border border-[#E2E2DF] cursor-pointer">
+              <div>
+                <p className="text-sm font-medium text-[#1A1A1A]">Provident Fund (PF)</p>
+                <p className="text-xs text-[#6B6B6B]">12% of basic, cap ₹1,800</p>
+              </div>
+              <input type="checkbox" checked={form.pf_applicable} onChange={(e) => set("pf_applicable", e.target.checked)} className="w-5 h-5 accent-[#E5202E] shrink-0" />
+            </label>
+            <label className="flex items-center justify-between gap-3 p-3 rounded-xl border border-[#E2E2DF] cursor-pointer">
+              <div>
+                <p className="text-sm font-medium text-[#1A1A1A]">ESIC</p>
+                <p className="text-xs text-[#6B6B6B]">0.75%, only if gross ≤ ₹21,000</p>
+              </div>
+              <input type="checkbox" checked={form.esic_applicable} onChange={(e) => set("esic_applicable", e.target.checked)} className="w-5 h-5 accent-[#E5202E] shrink-0" />
+            </label>
+          </div>
+          <p className="text-[10px] text-[#6B6B6B] mt-2">
+            Turn off only for genuinely exempt employees — PF/ESIC are statutory for eligible staff.
+          </p>
         </Section>
 
         {/* ── Section 5: Address ── */}

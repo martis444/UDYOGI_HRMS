@@ -31,7 +31,6 @@ const ALLOWED_COLUMNS: ColMeta[] = [
   { key: "leave_travel",      label: "LTA",                 group: "Salary" },
   { key: "medical",           label: "Medical",             group: "Salary" },
   { key: "other_earning",     label: "Other earning",       group: "Salary" },
-  { key: "other_allowance",   label: "Other allowance",     group: "Salary" },
   { key: "ctc_annual",        label: "CTC annual",          group: "Salary" },
   { key: "bank_name",         label: "Bank name",           group: "Banking" },
   { key: "ifsc",              label: "IFSC code",           group: "Banking" },

@@ -104,7 +104,11 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
     spl_r   = float(pm.spl or 0)
     cca_r   = float(pm.cca or 0)
     lt_r    = float(pm.leave_travel or 0)
-    oa      = round(float(pm.other_allowance or 0))   # ad-hoc reward — added to earnings at FULL value (not prorated)
+    oa      = round(float(pm.other_allowance or 0))   # per-month one-off reward (full value)
+    oe      = round(float(pm.other_earning or 0))      # fixed monthly Other Earning (full value)
+    # Merged "Other Earning" line = fixed component + per-month reward. Both paid,
+    # both non-statutory (outside the PF/ESIC/PT base).
+    other_earning_total = oe + oa
 
     basic_amt = round(basic_r * factor)
     hra_amt   = round(hra_r   * factor)
@@ -113,7 +117,7 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
     lt_amt    = round(lt_r    * factor)
 
     gross_rate     = int(basic_r + hra_r + spl_r + cca_r + lt_r)
-    total_earnings = basic_amt + hra_amt + spl_amt + cca_amt + lt_amt + oa
+    total_earnings = basic_amt + hra_amt + spl_amt + cca_amt + lt_amt + other_earning_total
 
     pf_val   = int(float(pm.pf_emp or 0))
     esic_val = int(float(pm.esic_emp or 0))
@@ -139,6 +143,7 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         "cca":             cca_r,
         "leave_travel":    lt_r,
         "other_allowance": oa,
+        "other_earning":   other_earning_total,   # merged Other Earning (fixed + reward), paid
         "gross":           gross_rate,
         # prorated earning rate/amount pairs (for payslip table)
         "basic_rate":     int(basic_r),

@@ -294,6 +294,70 @@ def list_employees(
     return EmployeeListResponse(items=items, total=total, page=page, per_page=per_page)
 
 
+@router.get("/graph")
+def employee_graph(
+    entity_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Lean, enriched employee feed for the experimental graph view.
+
+    Read-only; entity-scoped like every other employee query. Returns ALL
+    scoped employees in one shot (no pagination) with the few extra fields the
+    graph's lenses need — current gross, statutory flags, key dates, and
+    data-quality booleans (never the encrypted values themselves).
+    """
+    q = (
+        db.query(Employee)
+        .options(
+            joinedload(Employee.location),
+            joinedload(Employee.department),
+            joinedload(Employee.grade),
+        )
+    )
+
+    actor_entity = _actor_entity_id(current_user)
+    if actor_entity is not None:
+        q = q.filter(Employee.entity_id == actor_entity)
+    elif entity_id:
+        q = q.filter(Employee.entity_id == entity_id)
+
+    def _iso(d):
+        return d.isoformat() if d else None
+
+    items = []
+    for e in q.all():
+        gross = sum((getattr(e, f, 0) or 0) for f in _SALARY_FIELDS)
+        items.append({
+            "emp_code": e.emp_code,
+            "sap_code": e.sap_code,
+            "name": e.name,
+            "entity_id": e.entity_id,
+            "location_city": e.location.city if e.location else None,
+            "department": e.department.name if e.department else None,
+            "designation": e.designation,
+            "grade": e.grade.code if e.grade else None,
+            "status": e.status,
+            "category": e.category,
+            "gross": float(gross),
+            "esic_applicable": e.esic_applicable,
+            "reporting_mgr_code": e.reporting_mgr_code,
+            "dob": _iso(e.dob),
+            "doj": _iso(e.doj),
+            "confirmation_date": _iso(e.confirmation_date),
+            "retirement_date": _iso(e.retirement_date),
+            "is_on_probation": e.is_on_probation,
+            # data-quality flags (presence only — never the encrypted value)
+            "has_pan": bool(e.pan),
+            "has_bank": e.bank_acc_enc is not None,
+            "has_sap": bool(e.sap_code),
+            "has_uan": bool(e.uan),
+            "has_confirmation": e.confirmation_date is not None,
+        })
+
+    return {"items": items, "total": len(items)}
+
+
 @router.get("/export")
 def export_employees(
     entity_id: Optional[str] = None,
@@ -347,11 +411,11 @@ def export_employees(
         "entity_id", "location_id", "department", "division", "designation",
         "grade", "reporting_mgr_code", "shift_id", "ctc_annual", "basic",
         "hra", "spl", "cca", "leave_travel", "medical", "other_earning",
-        "other_allowance", "profit_center_code", "profit_center_name",
+        "profit_center_code", "profit_center_name",
         "cost_center_code", "cost_center_name", "category",
         "pf_applicable", "esic_applicable",
         "pt_applicable", "pan", "aadhaar", "uan", "esic_no", "bank_name",
-        "ifsc", "present_addr", "perm_addr",
+        "bank_acc", "ifsc", "present_addr", "perm_addr",
         "confirmation_date", "status", "resignation_date", "retirement_date",
     ]
 
@@ -361,6 +425,7 @@ def export_employees(
 
     for emp in employees:
         aadhaar_plain = _pgp_decrypt(db, emp.aadhaar_enc)
+        bank_acc_plain = _pgp_decrypt(db, emp.bank_acc_enc)
         writer.writerow({
             "emp_code": emp.emp_code,
             "legacy_code": emp.legacy_code or "",
@@ -398,13 +463,13 @@ def export_employees(
             "leave_travel": str(emp.leave_travel) if emp.leave_travel else "",
             "medical": str(emp.medical) if emp.medical else "",
             "other_earning": str(emp.other_earning) if emp.other_earning else "",
-            "other_allowance": str(emp.other_allowance) if emp.other_allowance else "",
             "profit_center_code": emp.profit_center_code or "",
             "profit_center_name": emp.profit_center_name or "",
             "cost_center_code": emp.cost_center_code or "",
             "cost_center_name": emp.cost_center_name or "",
             "category": emp.category or "",
             "bank_name": emp.bank_name or "",
+            "bank_acc": _mask_bank_acc(bank_acc_plain) or "",  # masked — never expose raw account no
             "ifsc": emp.ifsc or "",
             "present_addr": emp.present_addr or "",
             "perm_addr": emp.perm_addr or "",
@@ -462,9 +527,12 @@ def create_employee(
     if db.get(Employee, emp_code):
         raise HTTPException(status_code=409, detail=f"emp_code '{emp_code}' already exists")
 
-    # Compute statutory gross (leave_travel included; other_allowance excluded) and esic_applicable
+    # Compute statutory gross (leave_travel included; other_allowance excluded) and esic_applicable.
+    # ESIC applies only under the ₹21k ceiling AND unless HR opted the employee out (default on).
     gross = _compute_gross(body.basic, body.hra, body.spl, body.cca, body.leave_travel)
-    esic_applicable = gross <= Decimal("21000")
+    esic_applicable = gross <= Decimal("21000") and (
+        body.esic_applicable if body.esic_applicable is not None else True
+    )
 
     now = datetime.now(timezone.utc)
     ip = req.client.host if req.client else None
@@ -603,12 +671,15 @@ async def update_employee(
         old_values["bank_acc"] = "ENCRYPTED"
         audit_new["bank_acc"] = "UPDATED"
 
-    # Recompute esic_applicable if any salary field changed
+    # Rule 4 on salary change: enforce the ESIC ceiling, but only ever turn it OFF
+    # (gross over ₹21k). Any manual opt-out/opt-in (already applied above from the
+    # request body, or set earlier) is preserved while still under the ceiling — so
+    # HR's "this employee doesn't take ESIC" choice isn't silently flipped back on.
     if any(f in orm_data for f in _SALARY_FIELDS):
         gross = _compute_gross(emp.basic, emp.hra, emp.spl, emp.cca, emp.leave_travel)
-        new_esic = gross <= Decimal("21000")
-        old_values["esic_applicable"] = str(emp.esic_applicable)
-        emp.esic_applicable = new_esic
+        if gross > Decimal("21000") and emp.esic_applicable:
+            old_values["esic_applicable"] = str(emp.esic_applicable)
+            emp.esic_applicable = False
 
     emp.updated_at = datetime.now(timezone.utc)
 
@@ -758,7 +829,7 @@ class IncrementBody(BaseModel):
     spl: Optional[Decimal] = None
     cca: Optional[Decimal] = None
     leave_travel: Optional[Decimal] = None
-    other_allowance: Optional[Decimal] = None
+    other_earning: Optional[Decimal] = None
     reason: str = "increment"       # 'increment' | 'correction'
 
 
@@ -774,7 +845,7 @@ def _structure_dict(s: SalaryStructure) -> dict:
         "spl":             s.spl,
         "cca":             s.cca,
         "leave_travel":    s.leave_travel,
-        "other_allowance": s.other_allowance,
+        "other_earning":   s.other_earning,
         "gross":           gross,
         "reason":          s.reason,
         "created_by":      s.created_by,
@@ -799,7 +870,7 @@ def apply_salary_increment(
 
     new_values = {
         c: getattr(body, c)
-        for c in ("basic", "hra", "spl", "cca", "leave_travel", "other_allowance")
+        for c in ("basic", "hra", "spl", "cca", "leave_travel", "other_earning")
     }
 
     try:

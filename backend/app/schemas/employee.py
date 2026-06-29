@@ -86,7 +86,9 @@ class EmployeeCreate(BaseModel):
     # Statutory flags
     pf_applicable: bool = True
     pt_applicable: bool = True
-    # esic_applicable is auto-computed from gross — not accepted as input
+    # esic_applicable: applies only under the ₹21k ceiling; HR may opt the employee
+    # out (default on). Capped by the ceiling regardless of this value.
+    esic_applicable: Optional[bool] = None
 
     # Statutory IDs (plain text — encrypted before storage)
     pan: Optional[str] = None

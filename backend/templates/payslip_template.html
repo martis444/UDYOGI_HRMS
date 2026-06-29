@@ -154,14 +154,14 @@
       {% endif %}
     </tr>
 
-    <!-- Row 6: OTHER ALLOW (if > 0) | OTHER DED (if > 0) — ad-hoc monthly adjustments -->
-    {% if other_allowance or other_deduction %}
+    <!-- Row 6: OTHER EARNING (if > 0) | OTHER DED (if > 0) — Other Earning = fixed + per-month reward -->
+    {% if other_earning or other_deduction %}
     <tr>
       <td></td>
-      {% if other_allowance %}
-      <td>OTHER ALLOW</td>
+      {% if other_earning %}
+      <td>OTHER EARNING</td>
       <td class="amt"></td>
-      <td class="amt">{{ other_allowance }}</td>
+      <td class="amt">{{ other_earning }}</td>
       {% else %}
       <td></td><td></td><td></td>
       {% endif %}

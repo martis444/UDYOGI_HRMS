@@ -39,6 +39,10 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
     cca             = float(src.cca or 0)
     leave_travel    = float(src.leave_travel or 0)
     other_allowance = float(src.other_allowance or 0)
+    # Other Earning is a PAID, non-statutory monthly earning. The legacy
+    # record-only `other_allowance` salary field is merged into it (folded here so
+    # the merge holds even before the one-time data backfill runs).
+    other_earning   = float(src.other_earning or 0) + other_allowance
 
     # Statutory gross: leave_travel included; other_allowance excluded from PF/ESIC/PT base.
     # DA was folded into basic in 15.1 — PF base is `basic` only now.
@@ -50,7 +54,9 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
 
     # ESIC always rounds UP (ceiling) per statutory requirement —
     # fractional paise are always rounded in favour of the fund, not the employee.
-    if gross <= 21000:
+    # Gated by esic_applicable: HR can opt an employee out (e.g. exempted/excluded)
+    # and the system then deducts nothing — single source of truth for ESIC on/off.
+    if emp.esic_applicable is not False and gross <= 21000:
         esic_emp = math.ceil(gross * 0.0075)
         esic_ern = math.ceil(gross * 0.0325)
     else:
@@ -80,6 +86,7 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
         "cca":             cca,
         "leave_travel":    leave_travel,
         "other_allowance": other_allowance,
+        "other_earning":   other_earning,
         "gross":           gross,
         "pf_emp":          pf_emp,
         "pf_ern":          pf_ern,
@@ -247,7 +254,9 @@ def process_payroll_month(
     if data["pf_emp"] or data["pf_ern"]:               # PF applicable
         data["pf_emp"] = min(round(basic_paid * 0.12), 1800)
         data["pf_ern"] = min(round(basic_paid * 0.13), 2340)
-    if float(data["gross"]) <= 21000 and gross_paid > 0:   # ESIC eligible (committed gross)
+    # Mirror PF: only reprorate ESIC if the base run already charged it — that
+    # already encodes esic_applicable AND the committed-gross ≤ ₹21,000 ceiling.
+    if (data["esic_emp"] or data["esic_ern"]) and gross_paid > 0:
         data["esic_emp"] = math.ceil(gross_paid * 0.0075)
         data["esic_ern"] = math.ceil(gross_paid * 0.0325)
     data["total_deduction"] = (
@@ -256,12 +265,16 @@ def process_payroll_month(
     )
 
     # Earnings prorate by payable_factor; deductions already reflect the paid amount.
-    # other_allowance is an ad-hoc reward — added to take-home at FULL value (never
-    # prorated, never in the statutory base); other_deduction is already in total_ded.
+    # "Other Earning" is PAID but non-statutory — added to take-home at FULL value
+    # (never prorated, never in the PF/ESIC/PT base). It has two sources, both full:
+    #   other_allowance = the per-month one-off reward (attendance CSV, Session 20)
+    #   other_earning   = the fixed monthly Other Earning component (salary record)
+    # other_deduction is already inside total_deduction.
     stat_earnings  = Decimal(str(data["gross"]))             # basic+hra+spl+cca+lt
     other_allow    = Decimal(str(data["other_allowance"]))
+    other_earn     = Decimal(str(data.get("other_earning") or 0))
     total_ded      = Decimal(str(data["total_deduction"]))
-    total_earnings = stat_earnings * payable_factor + other_allow
+    total_earnings = stat_earnings * payable_factor + other_allow + other_earn
     prorated_net   = float(total_earnings - total_ded)
 
     now = datetime.now(timezone.utc)
@@ -288,7 +301,7 @@ def process_payroll_month(
 
     if existing:
         for field in ("basic", "hra", "spl", "cca", "leave_travel", "other_allowance",
-                      "gross", "pf_emp", "pf_ern", "esic_emp", "esic_ern", "pt",
+                      "other_earning", "gross", "pf_emp", "pf_ern", "esic_emp", "esic_ern", "pt",
                       "loan_emi", "other_deduction"):
             setattr(existing, field, data[field])
         existing.net_pay = prorated_net
@@ -309,6 +322,7 @@ def process_payroll_month(
             cca             = data["cca"],
             leave_travel    = data["leave_travel"],
             other_allowance = data["other_allowance"],
+            other_earning   = data["other_earning"],
             gross           = data["gross"],
             pf_emp          = data["pf_emp"],
             pf_ern          = data["pf_ern"],

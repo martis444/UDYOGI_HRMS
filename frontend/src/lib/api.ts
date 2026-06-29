@@ -123,6 +123,12 @@ export async function apiGetEmployee(code: string) {
   return data;
 }
 
+// Lean, enriched feed for the experimental employee-graph view.
+export async function apiGetEmployeeGraph(params?: Record<string, string>) {
+  const { data } = await api.get("/api/employees/graph", { params });
+  return data;
+}
+
 // ─── Salary structure history + increments ────────────────────────────────────
 
 export interface SalaryStructureRow {
@@ -134,7 +140,7 @@ export interface SalaryStructureRow {
   spl: number;
   cca: number;
   leave_travel: number;
-  other_allowance: number;
+  other_earning: number;
   gross: number;
   reason: string;
   created_by: string | null;

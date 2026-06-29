@@ -13,7 +13,7 @@ const INC_COMPONENTS = [
   { key: "spl", label: "SPL" },
   { key: "cca", label: "CCA" },
   { key: "leave_travel", label: "LTA" },
-  { key: "other_allowance", label: "Other allowance" },
+  { key: "other_earning", label: "Other earning" },
 ] as const;
 
 type IncKey = (typeof INC_COMPONENTS)[number]["key"];
@@ -37,7 +37,7 @@ export default function IncrementModal({ empCode, active, onClose, onSuccess, on
     spl: String(active?.spl ?? ""),
     cca: String(active?.cca ?? ""),
     leave_travel: String(active?.leave_travel ?? ""),
-    other_allowance: String(active?.other_allowance ?? ""),
+    other_earning: String(active?.other_earning ?? ""),
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");

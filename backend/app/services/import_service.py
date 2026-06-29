@@ -138,18 +138,21 @@ _COL_MAP: dict[str, str] = {
     "medical": "medical",
     "medical allowance": "medical",
     "medical_allowance": "medical",
-    # other_earning
+    # other_earning (paid, non-statutory). The legacy "other allowance" salary
+    # column is merged into Other Earning, so it maps here too.
     "other earning": "other_earning",
     "other earnings": "other_earning",
     "other_earning": "other_earning",
     "others earning": "other_earning",
-    # other_allowance (RECORD-ONLY ad-hoc payout — not on payslip)
-    "other allowance": "other_allowance",
-    "other_allowance": "other_allowance",
-    "others allowance": "other_allowance",
+    "other allowance": "other_earning",
+    "other_allowance": "other_earning",
+    "others allowance": "other_earning",
     # pf_applicable
     "pf applicable": "pf_applicable",
     "pf_applicable": "pf_applicable",
+    # esic_applicable (HR opt-out; still capped by the ₹21k ceiling)
+    "esic applicable": "esic_applicable",
+    "esic_applicable": "esic_applicable",
     # pt_applicable
     "pt applicable": "pt_applicable",
     "pt_applicable": "pt_applicable",
@@ -448,9 +451,9 @@ def _apply_updates(emp, row: dict, db: Session, dept_cache: dict, now: datetime)
         emp.resignation_date = _row_date(row, "resignation_date")
 
     salary_changed = False
-    # medical/other_earning/other_allowance carried but NOT part of statutory gross.
+    # medical/other_earning carried but NOT part of statutory gross.
     for col in ["ctc_annual", "basic", "hra", "spl", "cca", "leave_travel",
-                "medical", "other_earning", "other_allowance"]:
+                "medical", "other_earning"]:
         if _present(row, col):
             setattr(emp, col, _row_dec(row, col))
             if col in ("basic", "hra", "spl", "cca", "leave_travel"):
@@ -458,21 +461,28 @@ def _apply_updates(emp, row: dict, db: Session, dept_cache: dict, now: datetime)
 
     if _present(row, "pf_applicable"):
         emp.pf_applicable = _row_bool(row, "pf_applicable")
+    if _present(row, "esic_applicable"):
+        emp.esic_applicable = _row_bool(row, "esic_applicable")
     if _present(row, "pt_applicable"):
         emp.pt_applicable = _row_bool(row, "pt_applicable")
 
-    if _present(row, "aadhaar"):
+    # masked values (XXXX…) are exported placeholders — skip, don't re-encrypt
+    if _present(row, "aadhaar") and not _is_masked(row["aadhaar"]):
         emp.aadhaar_enc = _pgp_encrypt_local(db, str(row["aadhaar"]))
-    if _present(row, "bank_acc"):
+    if _present(row, "bank_acc") and not _is_masked(row["bank_acc"]):
         emp.bank_acc_enc = _pgp_encrypt_local(db, str(row["bank_acc"]))
 
-    # rule 4: recompute ESIC eligibility on any salary change
+    # rule 4: enforce the ESIC ceiling on salary change — but only ever turn it
+    # OFF (gross over ₹21k). A manual opt-out (set above or earlier) is preserved
+    # while under the ceiling, so a bulk salary update won't re-enable ESIC for an
+    # employee HR has opted out.
     if salary_changed:
         gross = sum(
             (v for v in [emp.basic, emp.hra, emp.spl, emp.cca, emp.leave_travel] if v),
             Decimal("0"),
         )
-        emp.esic_applicable = gross <= Decimal("21000")
+        if gross > Decimal("21000") and emp.esic_applicable:
+            emp.esic_applicable = False
 
     emp.updated_at = now
 
@@ -702,6 +712,19 @@ def _pgp_encrypt_local(db: Session, plaintext: str) -> bytes:
     ).scalar()
 
 
+def _is_masked(v) -> bool:
+    """True if a value looks like an exported mask (e.g. 'XXXX 1234' / '****1234').
+
+    Encrypted fields (aadhaar, bank_acc) are exported masked, never in plain text.
+    On re-upload an unedited mask must be treated as 'no change' — never encrypted
+    back into the column — so the real number isn't replaced by the mask.
+    """
+    if v is None:
+        return False
+    s = str(v).strip().upper()
+    return s.startswith("XXXX") or s.startswith("****")
+
+
 def commit_import(
     valid_rows: list[dict],
     db: Session,
@@ -760,12 +783,16 @@ def commit_import(
             leave_travel    = _row_dec(row, "leave_travel") or Decimal("0")
             medical         = _row_dec(row, "medical") or Decimal("0")
             other_earning   = _row_dec(row, "other_earning") or Decimal("0")
-            other_allowance = _row_dec(row, "other_allowance") or Decimal("0")
-            # Statutory gross excludes medical/other_earning/other_allowance
+            # Statutory gross excludes medical/other_earning
             gross = sum((v for v in [basic, hra, spl, cca, leave_travel] if v), Decimal("0"))
 
             aadhaar = row.get("aadhaar")
             bank_acc = row.get("bank_acc")
+            # ignore exported masks (XXXX…) — they aren't real values to store
+            if _is_masked(aadhaar):
+                aadhaar = None
+            if _is_masked(bank_acc):
+                bank_acc = None
 
             # Normalise fields with DB CHECK constraints to lowercase.
             # gender CHECK accepts only 'male'/'female'/'other', so map
@@ -805,7 +832,6 @@ def commit_import(
                 leave_travel=leave_travel,
                 medical=medical,
                 other_earning=other_earning,
-                other_allowance=other_allowance,
                 category=(row.get("category") or "staff").strip().lower(),
                 profit_center_code=row.get("profit_center_code"),
                 profit_center_name=row.get("profit_center_name"),
@@ -814,7 +840,8 @@ def commit_import(
                 confirmation_date=_row_date(row, "confirmation_date"),
                 resignation_date=_row_date(row, "resignation_date"),
                 pf_applicable=_row_bool(row, "pf_applicable", True),
-                esic_applicable=gross <= Decimal("21000"),
+                # honour an opt-out from the file, still capped by the ₹21k ceiling
+                esic_applicable=(gross <= Decimal("21000")) and _row_bool(row, "esic_applicable", True),
                 pt_applicable=_row_bool(row, "pt_applicable", True),
                 pan=row.get("pan"),
                 aadhaar_enc=_pgp_encrypt_local(db, aadhaar) if aadhaar else None,
@@ -971,7 +998,11 @@ async def parse_attendance_csv(file: UploadFile, db: Session) -> list[dict]:
             "remarks": str(raw.get("Remarks", "")).strip() or None,
             # Per-month ad-hoc adjustments (optional). None when the cell is blank
             # so the commit can SKIP it (rule 7) instead of overwriting with 0.
-            "other_allowance": _opt_amount(raw.get("Other Allowance", raw.get("Other Allow", ""))),
+            # "Other Earning" is the new header; still accept the legacy "Other Allowance".
+            # Stored in payroll_months.other_allowance (the per-month reward bucket).
+            "other_allowance": _opt_amount(
+                raw.get("Other Earning", raw.get("Other Allowance", raw.get("Other Allow", "")))
+            ),
             "other_deduction": _opt_amount(raw.get("Other Deduction", raw.get("Other Ded", ""))),
         })
 

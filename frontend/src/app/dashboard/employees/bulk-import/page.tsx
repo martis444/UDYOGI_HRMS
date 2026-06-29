@@ -60,8 +60,8 @@ const TEMPLATE_HEADERS = [
   "grade_id", "shift_id", "category", "confirmation_date",
   "profit_center_code", "profit_center_name", "cost_center_code", "cost_center_name",
   "ctc_annual", "basic", "hra", "spl", "cca", "leave_travel",
-  "medical", "other_earning", "other_allowance",
-  "pf_applicable", "pt_applicable", "pan", "aadhaar", "uan", "esic_no",
+  "medical", "other_earning",
+  "pf_applicable", "esic_applicable", "pt_applicable", "pan", "aadhaar", "uan", "esic_no",
   "bank_name", "bank_acc", "ifsc",
   "present_addr", "perm_addr", "status", "resignation_date",
 ];
@@ -217,7 +217,7 @@ export default function BulkImportPage() {
               <li><b>mobile</b> — optional, 10 digits. Multiple numbers: separate with <span className="font-mono">/</span> &nbsp;e.g. <span className="font-mono">9876543210/9123456780</span>.</li>
               <li><b>entity_id</b> — one of <span className="font-mono">UPPL · USAPL · UAPL · UMPL</span>.</li>
               <li><b>department_id</b> — the department <b>name</b> (e.g. <span className="font-mono">ADMIN</span>). New names are created automatically per entity. <b>division</b> is free text.</li>
-              <li><b>gender</b> — male / female. &nbsp;<b>pf_applicable / pt_applicable</b> — true / false.</li>
+              <li><b>gender</b> — male / female. &nbsp;<b>pf_applicable / esic_applicable / pt_applicable</b> — true / false (ESIC still applies only if gross ≤ ₹21,000).</li>
               <li>Leave any unknown cell <b>blank</b> — blanks are skipped, never imported as empty.</li>
             </ul>
           </div>
