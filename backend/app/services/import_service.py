@@ -274,6 +274,22 @@ def _safe_float(val: Any) -> float:
         return 0.0
 
 
+def _opt_amount(val: Any) -> Optional[float]:
+    """Parse an optional money cell → float, or None when BLANK.
+
+    Used for the per-month other-allowance / other-deduction columns: a blank
+    cell means "leave unchanged" (rule 7), which 0 cannot express. Strips commas,
+    ₹/Rs and spaces (Excel exports money as "1,500.00")."""
+    s = str(val).strip()
+    if not s:
+        return None
+    s = re.sub(r"(?i)(rs\.?|₹|,|\s)", "", s)
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
 def _to_str(val: Any) -> Optional[str]:
     """Convert a cell value to a stripped string, or None for blank/NaN."""
     if val is None:
@@ -876,7 +892,11 @@ async def parse_attendance_csv(file: UploadFile, db: Session) -> list[dict]:
 
     Header format:
         Emp Code, Employee Name, Total Days, Pay Days,
-        P, A, L, R, C, E, S, H, OT Hours, Salary Flag, Flag, Remarks
+        P, A, L, R, C, E, S, H, OT Hours, Salary Flag, Flag,
+        Other Allowance, Other Deduction, Remarks
+
+    - Other Allowance / Other Deduction are optional per-month adjustments (a
+      reward / a penalty). Blank = no change; a number overwrites for that month.
 
     - Emp Code is the database emp_code (e.g. UM000001).
       Falls back to reading "HRMS Code" column for backward compatibility with old files;
@@ -943,6 +963,10 @@ async def parse_attendance_csv(file: UploadFile, db: Session) -> list[dict]:
             "ot_hours": _safe_float(raw.get("OT Hours", "")),
             "salary_flag": str(raw.get("Salary Flag", "")).strip() or None,
             "remarks": str(raw.get("Remarks", "")).strip() or None,
+            # Per-month ad-hoc adjustments (optional). None when the cell is blank
+            # so the commit can SKIP it (rule 7) instead of overwriting with 0.
+            "other_allowance": _opt_amount(raw.get("Other Allowance", raw.get("Other Allow", ""))),
+            "other_deduction": _opt_amount(raw.get("Other Deduction", raw.get("Other Ded", ""))),
         })
 
     return rows

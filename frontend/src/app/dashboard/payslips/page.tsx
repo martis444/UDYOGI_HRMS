@@ -246,6 +246,30 @@ function PayslipDocument({ data }: { data: PayslipData }) {
               )}
             </tr>
 
+            {/* Row 6: OTHER ALLOW (conditional) | OTHER DED (conditional) — ad-hoc monthly adjustments */}
+            {(data.other_allowance > 0 || data.other_deduction > 0) && (
+              <tr>
+                <td style={tdStyle}></td>
+                {data.other_allowance > 0 ? (
+                  <>
+                    <td style={tdStyle}>OTHER ALLOW</td>
+                    <td style={{ ...tdStyle, ...amtStyle }}></td>
+                    <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.other_allowance)}</td>
+                  </>
+                ) : (
+                  <><td style={tdStyle}></td><td style={tdStyle}></td><td style={tdStyle}></td></>
+                )}
+                {data.other_deduction > 0 ? (
+                  <>
+                    <td style={tdStyle}>OTHER DED</td>
+                    <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.other_deduction)}</td>
+                  </>
+                ) : (
+                  <><td style={tdStyle}></td><td style={tdStyle}></td></>
+                )}
+              </tr>
+            )}
+
             {/* Footer row 1: Paydays / Total Earnings / Total Deductions */}
             <tr style={{ background: "#ccc", fontWeight: "bold" }}>
               <td style={tdStyle}>Paydays: {data.pay_days ?? data.total_days ?? "—"}</td>

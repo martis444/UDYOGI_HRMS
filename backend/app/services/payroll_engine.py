@@ -130,6 +130,16 @@ def process_payroll_month(
 
     data = compute_payroll(emp_code, year, month, db)
 
+    # Per-month ad-hoc adjustments live on the payroll_months row and are set via
+    # the attendance import (a reward → other_allowance, a penalty → other_deduction).
+    # PRESERVE them across reprocess: compute_payroll resets other_deduction to 0 and
+    # reads other_allowance from the salary structure, so without this a payslip view
+    # (which reprocesses unlocked rows) would wipe a manually-entered value. New rows
+    # default to 0. other_deduction feeds the DB-GENERATED total_deduction;
+    # other_allowance is a full-value addition to net (a reward, never prorated).
+    data["other_allowance"] = float(existing.other_allowance or 0) if existing else 0.0
+    data["other_deduction"] = float(existing.other_deduction or 0) if existing else 0.0
+
     # Loan/advance EMI for this period. apply_emi_on_payroll mutates the loan ledger
     # (decrements outstanding once per period; idempotent on reprocess). loan_emi feeds
     # the DB-GENERATED total_deduction, so recompute total_deduction + net in Python to
@@ -246,10 +256,12 @@ def process_payroll_month(
     )
 
     # Earnings prorate by payable_factor; deductions already reflect the paid amount.
-    # other_allowance is RECORD-ONLY (a snapshot on the row, never in take-home).
+    # other_allowance is an ad-hoc reward — added to take-home at FULL value (never
+    # prorated, never in the statutory base); other_deduction is already in total_ded.
     stat_earnings  = Decimal(str(data["gross"]))             # basic+hra+spl+cca+lt
+    other_allow    = Decimal(str(data["other_allowance"]))
     total_ded      = Decimal(str(data["total_deduction"]))
-    total_earnings = stat_earnings * payable_factor
+    total_earnings = stat_earnings * payable_factor + other_allow
     prorated_net   = float(total_earnings - total_ded)
 
     now = datetime.now(timezone.utc)

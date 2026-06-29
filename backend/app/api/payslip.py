@@ -104,7 +104,7 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
     spl_r   = float(pm.spl or 0)
     cca_r   = float(pm.cca or 0)
     lt_r    = float(pm.leave_travel or 0)
-    oa      = round(float(pm.other_allowance or 0))   # RECORD-ONLY: shown for reference, not in totals
+    oa      = round(float(pm.other_allowance or 0))   # ad-hoc reward — added to earnings at FULL value (not prorated)
 
     basic_amt = round(basic_r * factor)
     hra_amt   = round(hra_r   * factor)
@@ -113,7 +113,7 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
     lt_amt    = round(lt_r    * factor)
 
     gross_rate     = int(basic_r + hra_r + spl_r + cca_r + lt_r)
-    total_earnings = basic_amt + hra_amt + spl_amt + cca_amt + lt_amt
+    total_earnings = basic_amt + hra_amt + spl_amt + cca_amt + lt_amt + oa
 
     pf_val   = int(float(pm.pf_emp or 0))
     esic_val = int(float(pm.esic_emp or 0))

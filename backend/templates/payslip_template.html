@@ -154,6 +154,26 @@
       {% endif %}
     </tr>
 
+    <!-- Row 6: OTHER ALLOW (if > 0) | OTHER DED (if > 0) — ad-hoc monthly adjustments -->
+    {% if other_allowance or other_deduction %}
+    <tr>
+      <td></td>
+      {% if other_allowance %}
+      <td>OTHER ALLOW</td>
+      <td class="amt"></td>
+      <td class="amt">{{ other_allowance }}</td>
+      {% else %}
+      <td></td><td></td><td></td>
+      {% endif %}
+      {% if other_deduction %}
+      <td>OTHER DED</td>
+      <td class="amt">{{ other_deduction }}</td>
+      {% else %}
+      <td></td><td></td>
+      {% endif %}
+    </tr>
+    {% endif %}
+
     <!-- Footer row 1: Paydays / Total Earnings / Total Deductions -->
     <tr class="ftr">
       <td>Paydays: {{ pay_days if pay_days is not none else total_days }}</td>
