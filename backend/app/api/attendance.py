@@ -502,15 +502,18 @@ def attendance_csv_template(
             raise HTTPException(status_code=403, detail="Access denied")
 
     employees = (
-        db.query(Employee.emp_code, Employee.name)
+        db.query(Employee.emp_code, Employee.name, Employee.sap_code)
         .filter(Employee.entity_id == entity_id, Employee.status == "active")
         .order_by(Employee.name)
         .all()
     )
 
     total_days = calendar.monthrange(year, month)[1]
-    header = ("Emp Code,Employee Name,Total Days,Pay Days,P,A,L,R,C,PL,S,H,LT,"
-              "OT Hours,Salary Flag,Flag,Other Allowance,Other Deduction,Remarks\n")
+    # Identity column is the SAP Code so HR can map employees by their SAP system.
+    # (The import resolves SAP Code → emp_code; rows without a SAP code fall back to
+    # the system emp_code so no employee becomes unmappable.)
+    header = ("SAP Code,Employee Name,Total Days,Pay Days,P,A,L,R,C,PL,S,H,LT,"
+              "Other Allowance,Other Deduction,Remarks\n")
 
     # Pre-mark APPROVED leaves for this period's 26→25 window (15.8). This template
     # is aggregate-count format (no per-day cells), so we pre-fill the C/PL/S COUNT
@@ -525,11 +528,14 @@ def attendance_csv_template(
 
     buf = io.StringIO()
     buf.write(header)
-    for emp_code, name in employees:
+    for emp_code, name, sap_code in employees:
         safe_name = (name or "").replace(",", " ")
-        # cols: 0 EmpCode 1 Name 2 TotalDays 3 PayDays 4 P 5 A 6 L 7 R 8 C 9 PL 10 S
-        #       11 H 12 LT 13 OT 14 SalaryFlag 15 Flag 16 OtherAllow 17 OtherDed 18 Remarks
-        cols = [emp_code, safe_name, str(total_days)] + [""] * 16
+        # Identity = SAP code; fall back to emp_code when an employee has no SAP code
+        # so the row stays mappable on re-upload. (The parser resolves either.)
+        ident = (sap_code or emp_code or "").replace(",", " ")
+        # cols: 0 SAPCode 1 Name 2 TotalDays 3 PayDays 4 P 5 A 6 L 7 R 8 C 9 PL 10 S
+        #       11 H 12 LT 13 OtherAllow 14 OtherDed 15 Remarks
+        cols = [ident, safe_name, str(total_days)] + [""] * 13
         appr = approved.get(emp_code)
         if appr:
             if appr["CL"]: cols[8]  = str(len(appr["CL"]))
@@ -537,14 +543,15 @@ def attendance_csv_template(
             if appr["SL"]: cols[10] = str(len(appr["SL"]))
             notes = [f"{lt} {_fmt_dates(appr[lt])}" for lt in ("CL", "SL", "PL") if appr[lt]]
             if notes:
-                cols[18] = "APPROVED (do not edit): " + "; ".join(notes)
+                cols[15] = "APPROVED (do not edit): " + "; ".join(notes)
         buf.write(",".join(cols) + "\n")
 
-    # Legend (blank Emp Code → parser skips these rows).
+    # Legend (blank SAP Code → parser skips these rows).
     buf.write("\n")
     buf.write(",LEGEND: C=Casual SL=Sick PL=Privilege counts for the 26th-25th cycle.\n")
     buf.write(",C/PL/S columns pre-filled with APPROVED leave days — do NOT reduce them; see Remarks for dates.\n")
     buf.write(",Fill P (present) / A (absent) / L (LWP) / R (weekly off) / H (holiday) / LT (late) for the rest.\n")
+    buf.write(",SAP Code identifies the employee — do NOT edit it.\n")
     buf.write(",Other Allowance = one-off reward/extra pay (adds to net); Other Deduction = one-off penalty (cuts net). Blank = none.\n")
 
     filename = f"attendance_template_{year}_{month:02d}_{entity_id}.csv"

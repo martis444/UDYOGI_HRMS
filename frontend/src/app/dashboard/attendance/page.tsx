@@ -718,7 +718,7 @@ export default function AttendancePage() {
               <div className={`rounded-xl border p-4 transition ${importStep === 1 ? "border-[#E5202E]/30 bg-[#FFF5F5]" : "border-[#E2E2DF] bg-[#F9F9F7]"}`}>
                 <p className="text-sm font-semibold text-[#1A1A1A] mb-1">Step 1 — Download template <span className="font-normal text-[#6B6B6B]">(optional)</span></p>
                 <p className="text-xs text-[#5A5A5A] mb-3">
-                  Pre-fills all active employees&apos; HRMS codes + {daysInMonth(selYear, selMonth)} total days for {monthLabel}.
+                  Pre-fills all active employees&apos; SAP codes + {daysInMonth(selYear, selMonth)} total days for {monthLabel}.
                   Fill in attendance columns, then upload below. Already have your own file? Skip straight to Step 2.
                 </p>
                 <p className="text-xs text-[#5A5A5A] mb-3">

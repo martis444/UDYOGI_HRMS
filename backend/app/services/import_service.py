@@ -891,17 +891,18 @@ async def parse_attendance_csv(file: UploadFile, db: Session) -> list[dict]:
     Parse the monthly attendance CSV.
 
     Header format:
-        Emp Code, Employee Name, Total Days, Pay Days,
-        P, A, L, R, C, E, S, H, OT Hours, Salary Flag, Flag,
+        SAP Code, Employee Name, Total Days, Pay Days,
+        P, A, L, R, C, PL, S, H, LT,
         Other Allowance, Other Deduction, Remarks
 
     - Other Allowance / Other Deduction are optional per-month adjustments (a
       reward / a penalty). Blank = no change; a number overwrites for that month.
 
-    - Emp Code is the database emp_code (e.g. UM000001).
-      Falls back to reading "HRMS Code" column for backward compatibility with old files;
-      old slash codes (UPPL/2026/00001) are resolved via legacy_code lookup.
-    - Rows where Emp Code is blank are skipped (legend/footer rows at bottom of file).
+    - SAP Code is the identity column (the employee's SAP code), resolved to the
+      database emp_code via a sap_code lookup. Falls back to "Emp Code"/"HRMS Code"
+      columns (and direct emp_code / legacy_code values) for backward compatibility
+      with older files.
+    - Rows where the identity cell is blank are skipped (legend/footer rows).
     """
     from app.models.employee import Employee as EmpModel
 
@@ -926,24 +927,29 @@ async def parse_attendance_csv(file: UploadFile, db: Session) -> list[dict]:
         ) from exc
     df.columns = [str(c).strip() for c in df.columns]
 
-    # Build lookup set; also build legacy_code map for backward compat
-    all_emps = db.query(EmpModel.emp_code, EmpModel.legacy_code).all()
+    # Build lookup maps: sap_code → emp_code (primary), plus emp_code set and
+    # legacy_code → emp_code for backward compat with older files.
+    all_emps = db.query(EmpModel.emp_code, EmpModel.legacy_code, EmpModel.sap_code).all()
     all_codes = {e.emp_code for e in all_emps}
     legacy_to_code = {e.legacy_code: e.emp_code for e in all_emps if e.legacy_code}
+    sap_to_code = {e.sap_code: e.emp_code for e in all_emps if e.sap_code}
 
     rows: list[dict] = []
 
     for _, raw in df.iterrows():
-        # Support new "UID" column and old "HRMS Code" column
-        uid = str(raw.get("Emp Code", raw.get("HRMS Code", ""))).strip()
+        # Identity column is now "SAP Code"; accept old "Emp Code"/"HRMS Code" too.
+        uid = str(
+            raw.get("SAP Code", raw.get("Emp Code", raw.get("HRMS Code", "")))
+        ).strip()
         if not uid:
             continue  # legend / blank row
 
-        # Direct match first (UID = emp_code), then legacy fallback
-        if uid in all_codes:
-            emp_code = uid
-        else:
-            emp_code = legacy_to_code.get(uid)  # None → unmatched
+        # Resolve: SAP code → emp_code, then direct emp_code, then legacy_code.
+        emp_code = (
+            sap_to_code.get(uid)
+            or (uid if uid in all_codes else None)
+            or legacy_to_code.get(uid)
+        )  # None → unmatched
 
         rows.append({
             "uid": uid,
