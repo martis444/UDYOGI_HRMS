@@ -388,7 +388,7 @@ def monthly_summary(
             db.rollback()
 
     rows = (
-        db.query(PayrollMonth, Employee.name)
+        db.query(PayrollMonth, Employee.name, Employee.sap_code)
         .join(Employee, Employee.emp_code == PayrollMonth.emp_code)
         .filter(
             Employee.entity_id == entity_id,
@@ -401,6 +401,7 @@ def monthly_summary(
     return [
         {
             "emp_code":    pm.emp_code,
+            "sap_code":    sap_code,
             "name":        name,
             "total_days":  pm.total_days,
             "pay_days":    pm.pay_days,
@@ -417,7 +418,7 @@ def monthly_summary(
             "salary_flag": pm.salary_flag,
             "status":      pm.status,
         }
-        for pm, name in rows
+        for pm, name, sap_code in rows
     ]
 
 

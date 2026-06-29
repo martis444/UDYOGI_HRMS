@@ -54,6 +54,7 @@ function fmt(n: number | null | undefined) {
 
 interface AttendanceRow {
   emp_code:   string;
+  sap_code:   string | null;
   name:       string;
   entity_id:  string;
   total_days: number | null;
@@ -307,9 +308,9 @@ export default function AttendancePage() {
 
   // ── Export CSV (client-side) ─────────────────────────────────────────────────
   const handleExportCsv = () => {
-    const header = "Emp Code,Name,Entity,Total Days,Pay Days,P,A,LWP,WO,CL,PL,SL,H,LT,OT Hrs,Status\n";
+    const header = "SAP Code,Name,Entity,Total Days,Pay Days,P,A,LWP,WO,CL,PL,SL,H,LT,OT Hrs,Status\n";
     const body = filtered.map((r) =>
-      [r.emp_code, r.name, r.entity_id, r.total_days ?? "", r.pay_days ?? "",
+      [r.sap_code || r.emp_code, r.name, r.entity_id, r.total_days ?? "", r.pay_days ?? "",
        r.days_p ?? "", r.days_a ?? "", r.days_lwp ?? "", r.days_wo ?? "",
        r.days_cl ?? "", r.days_pl ?? "", r.days_sl ?? "", r.days_h ?? "", r.late_days ?? "",
        r.ot_hours, r.status].join(",")
