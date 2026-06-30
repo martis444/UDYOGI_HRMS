@@ -405,8 +405,11 @@ def export_employees(
 
     employees = q.all()
 
+    # SAP code is the identity column (system emp_code is not exported). For an
+    # employee with no SAP code yet, sap_code falls back to emp_code so the row stays
+    # matchable on re-upload; the importer resolves either without polluting sap_code.
     headers = [
-        "emp_code", "legacy_code", "sap_code", "name", "father_name", "dob", "gender",
+        "legacy_code", "sap_code", "name", "father_name", "dob", "gender",
         "marital_status", "blood_group", "religion", "mobile", "email", "doj",
         "entity_id", "location_id", "department", "division", "designation",
         "grade", "reporting_mgr_code", "shift_id", "ctc_annual", "basic",
@@ -427,9 +430,8 @@ def export_employees(
         aadhaar_plain = _pgp_decrypt(db, emp.aadhaar_enc)
         bank_acc_plain = _pgp_decrypt(db, emp.bank_acc_enc)
         writer.writerow({
-            "emp_code": emp.emp_code,
             "legacy_code": emp.legacy_code or "",
-            "sap_code": emp.sap_code or "",
+            "sap_code": emp.sap_code or emp.emp_code,
             "name": emp.name,
             "father_name": emp.father_name or "",
             "dob": str(emp.dob) if emp.dob else "",

@@ -607,12 +607,23 @@ def validate_import_rows(rows: list[dict], db: Session) -> dict:
         sap = _clean_str(row.get("sap_code"))
         row["sap_code"] = sap
 
-        # An existing employee (matched by emp_code or legacy_code) is an UPDATE,
-        # not a duplicate-error. Required fields are only enforced on new inserts;
-        # for updates a blank cell means "leave unchanged" (rule 7).
+        # An existing employee is an UPDATE, not a duplicate-error. Matched by
+        # emp_code, then SAP code (the primary external identifier — so a re-upload
+        # that only carries SAP still finds the employee), then legacy code.
+        # Required fields are only enforced on new inserts; for updates a blank cell
+        # means "leave unchanged" (rule 7).
         match_code = None
         if emp_code and emp_code in existing_codes:
             match_code = emp_code
+        elif sap and sap in sap_to_code:
+            match_code = sap_to_code[sap]
+        elif sap and sap in existing_codes:
+            # The SAP Code column carried the system emp_code (export fallback for an
+            # employee with no SAP code yet) — match on it, but never store an
+            # emp_code into the sap_code field.
+            match_code = sap
+            row["sap_code"] = None
+            sap = None
         elif legacy and legacy in legacy_to_code:
             match_code = legacy_to_code[legacy]
         is_update = match_code is not None
@@ -754,16 +765,30 @@ def commit_import(
         for ec, lc in db.query(Employee.emp_code, Employee.legacy_code).all()
         if lc
     }
+    sap_to_code = {
+        sc: ec
+        for ec, sc in db.query(Employee.emp_code, Employee.sap_code).all()
+        if sc
+    }
 
     try:
         for row in valid_rows:
             emp_code = row.get("emp_code", "").strip()
             legacy = _clean_legacy(row.get("legacy_code"))
+            sap = _clean_str(row.get("sap_code"))
 
-            # UPDATE path: row matches an existing employee.
+            # UPDATE path: match by emp_code, then SAP code (primary external id),
+            # then legacy code — same precedence as validate_import.
             match_code = None
             if emp_code and emp_code in existing_codes:
                 match_code = emp_code
+            elif sap and sap in sap_to_code:
+                match_code = sap_to_code[sap]
+            elif sap and sap in existing_codes:
+                # SAP Code column held the emp_code fallback — match, don't pollute sap_code.
+                match_code = sap
+                row["sap_code"] = None
+                sap = None
             elif legacy and legacy in legacy_to_code:
                 match_code = legacy_to_code[legacy]
             if match_code:
