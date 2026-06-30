@@ -16,6 +16,16 @@ BEGIN;
 -- 0. Drop the dependent view (references total_deduction).
 DROP VIEW IF EXISTS public.v_payslip_summary;
 
+-- 0b. Ensure the columns exist. They were added schema-only in 13.20 on the LOCAL DB,
+-- but the live DB only got numbered migrations — so guard with IF NOT EXISTS (no-op
+-- where they already exist). The generated total_deduction below references them.
+ALTER TABLE payroll_months   ADD COLUMN IF NOT EXISTS medical    numeric(10,2) DEFAULT 0 NOT NULL;
+ALTER TABLE payroll_months   ADD COLUMN IF NOT EXISTS income_tax numeric(10,2) DEFAULT 0 NOT NULL;
+ALTER TABLE payroll_months   ADD COLUMN IF NOT EXISTS nps        numeric(10,2) DEFAULT 0 NOT NULL;
+-- salary_structures.medical: newly mapped by the SQLAlchemy model this session
+-- (engine reads struct.medical), so it MUST exist or every payroll compute breaks.
+ALTER TABLE salary_structures ADD COLUMN IF NOT EXISTS medical   numeric(10,2) DEFAULT 0 NOT NULL;
+
 -- 1. Rebuild total_deduction to include income_tax + nps (drop + re-add generated col).
 ALTER TABLE payroll_months DROP COLUMN total_deduction;
 ALTER TABLE payroll_months ADD COLUMN total_deduction numeric(10,2)
