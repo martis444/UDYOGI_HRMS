@@ -67,17 +67,17 @@
 <table class="emp-tbl" style="margin-bottom:5pt;">
   <tr>
     <td style="width:50%;">
-      <div><span class="emp-lbl">Name:</span> {{ name }} ({{ emp_code }})</div>
+      <div><span class="emp-lbl">Name:</span> {{ name }}</div>
+      <div><span class="emp-lbl">SAP Code:</span> {{ sap_code or emp_code }}</div>
       <div><span class="emp-lbl">Dept:</span> {{ department or '—' }}</div>
       {% if salary_effective_from_display %}<div><span class="emp-lbl">Salary w.e.f:</span> {{ salary_effective_from_display }}</div>{% endif %}
     </td>
     <td style="width:50%;">
       <div><span class="emp-lbl">Desig:</span> {{ designation or '—' }}</div>
+      <div><span class="emp-lbl">Location:</span> {{ location_city or '—' }}</div>
       {% if pf_number %}<div><span class="emp-lbl">PF No:</span> {{ pf_number }}</div>{% endif %}
       {% if esic_emp and esi_no %}<div><span class="emp-lbl">ESI No:</span> {{ esi_no }}</div>{% endif %}
-      <div><span class="emp-lbl">Series:</span> {{ location_city }}</div>
       {% if uan_no %}<div><span class="emp-lbl">UAN No:</span> {{ uan_no }}</div>{% endif %}
-      <div><span class="emp-lbl">OT Hrs:</span> {{ ot_hours if ot_hours else '—' }}</div>
     </td>
   </tr>
 </table>

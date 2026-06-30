@@ -367,9 +367,11 @@ def get_salary_sheet_pdf(
     contexts = _contexts_for_month(db, current_user, entity_id, year, month)
 
     # Master column order: identity + attendance counts, then earnings, then deductions.
-    text_keys = ("emp_code", "sap_id", "name")
+    # SAP Code is the primary identifier (emp_code only as a fallback when SAP is blank);
+    # the system emp_code is not exposed as its own column.
+    text_keys = ("sap_id", "name")
     headers = [
-        "#", "Emp Code", "SAP ID", "Employee Name",
+        "#", "SAP Code", "Employee Name",
         "Total Pay Days", "PR", "ABS", "WO", "CL", "HO", "Loan Closing Bal",
         "Basic", "HRA", "Medical", "Special", "Other Earning", "CCA", "LTA", "Other Allow",
         "Earn Total",
@@ -394,7 +396,7 @@ def get_salary_sheet_pdf(
     for c in contexts:
         loan_closing = float(loan_service.closing_balance_as_of(c["emp_code"], year, month, db))
         row = {
-            "emp_code": c["emp_code"], "sap_id": c.get("sap_code") or "", "name": c["name"],
+            "sap_id": c.get("sap_code") or c["emp_code"], "name": c["name"],
             "pay_days": c["pay_days"] if c["pay_days"] is not None else c["total_days"],
             "pr": c["days_p"] or 0, "abs": c["days_a"] or 0, "wo": c["days_wo"] or 0,
             "cl": c["days_cl"] or 0, "ho": c["days_h"] or 0, "loan_closing": loan_closing,

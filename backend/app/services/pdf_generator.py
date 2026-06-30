@@ -167,8 +167,9 @@ def generate_salary_sheet_xlsx(context: dict) -> bytes:
         c.font = Font(bold=True)
         c.fill = PatternFill("solid", fgColor="EFEFEF")
 
-    # widths: # + text cols (wider) + numeric cols
-    widths = [4] + [12, 12, 22][:n_text] + [10] * (last_col - 1 - n_text)
+    # widths: # + text cols (last text col = name, wide) + numeric cols
+    text_widths = [14] * (n_text - 1) + [22] if n_text else []
+    widths = [4] + text_widths + [10] * (last_col - 1 - n_text)
     for idx, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(idx)].width = w
     ws.freeze_panes = ws.cell(row=header_row + 1, column=1)

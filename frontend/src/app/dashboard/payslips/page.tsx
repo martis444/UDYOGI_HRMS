@@ -13,6 +13,7 @@ import { FileText, Download, Printer, Search, Clock, Pencil, X, Loader2 } from "
 interface PayslipData {
   payroll_id: number;
   emp_code: string;
+  sap_code: string | null;
   year: number;
   month: number;
   month_name: string;
@@ -159,7 +160,8 @@ function PayslipDocument({ data }: { data: PayslipData }) {
           <tbody>
             <tr>
               <td style={{ ...empCellStyle, width: "50%" }}>
-                <div><span style={lblStyle}>Name:</span> {data.name} ({data.emp_code})</div>
+                <div><span style={lblStyle}>Name:</span> {data.name}</div>
+                <div><span style={lblStyle}>SAP Code:</span> {data.sap_code || data.emp_code}</div>
                 <div><span style={lblStyle}>Dept:</span> {data.department ?? "—"}</div>
                 {(data.salary_effective_from_display ?? data.salary_effective_from) && (
                   <div><span style={lblStyle}>Salary w.e.f:</span> {data.salary_effective_from_display ?? data.salary_effective_from}</div>
@@ -167,11 +169,10 @@ function PayslipDocument({ data }: { data: PayslipData }) {
               </td>
               <td style={{ ...empCellStyle, width: "50%" }}>
                 <div><span style={lblStyle}>Desig:</span> {data.designation ?? "—"}</div>
+                <div><span style={lblStyle}>Location:</span> {data.location_city || "—"}</div>
                 {data.pf_number && <div><span style={lblStyle}>PF No:</span> {data.pf_number}</div>}
                 {data.esic_emp > 0 && data.esi_no && <div><span style={lblStyle}>ESI No:</span> {data.esi_no}</div>}
-                <div><span style={lblStyle}>Series:</span> {data.location_city}</div>
                 {data.uan_no && <div><span style={lblStyle}>UAN No:</span> {data.uan_no}</div>}
-                <div><span style={lblStyle}>OT Hrs:</span> {data.ot_hours || "—"}</div>
               </td>
             </tr>
           </tbody>
