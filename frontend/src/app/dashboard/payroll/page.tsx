@@ -14,11 +14,12 @@ import {
   apiGetPayrollMonths, apiProcessMonth, apiLockPayroll, apiUnlockPayroll,
   apiGetEmployees, apiGetSalaryHistory,
   apiDownloadBulkPayslips, apiDownloadSalarySheet,
-  type PayrollMonthRow, type SalaryStructureRow,
+  apiEmailPayslipsPreview, apiEmailPayslipsSend,
+  type PayrollMonthRow, type SalaryStructureRow, type EmailPayslipsPreview,
 } from "@/lib/api";
 import {
   Lock, Unlock, Play, Loader2, AlertCircle, CheckCircle2,
-  TrendingUp, History, Search, Wallet, FileText, Sheet, Upload,
+  TrendingUp, History, Search, Wallet, FileText, Sheet, Upload, Mail, Send,
 } from "lucide-react";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -146,6 +147,7 @@ function MonthlyRun({ user, isSuperAdmin, isAdmin, showToast }: Importable & { i
   // Modals
   const [confirm, setConfirm] = useState<null | { kind: "process" | "lock"; row: { entity_id: string; year: number; month: number } }>(null);
   const [unlockRow, setUnlockRow] = useState<null | { entity_id: string; year: number; month: number }>(null);
+  const [emailRow, setEmailRow] = useState<null | { entity_id: string; year: number; month: number; status: string }>(null);
   const [processErrors, setProcessErrors] = useState<{ emp_code: string; error: string }[] | null>(null);
 
   const yearOptions = useMemo(() => {
@@ -339,6 +341,15 @@ function MonthlyRun({ user, isSuperAdmin, isAdmin, showToast }: Importable & { i
                               >
                                 {dlKey === `${rowKey(r)}-sheet` ? <Loader2 size={12} className="animate-spin" /> : <Sheet size={12} />} Salary sheet
                               </button>
+                              {isAdmin && (
+                                <button
+                                  onClick={() => setEmailRow(r)}
+                                  title="Email payslips to employees"
+                                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-white border border-[#E2E2DF] text-[#1A1A1A] hover:bg-[#F4F4F2] rounded-lg transition font-medium"
+                                >
+                                  <Mail size={12} /> Email
+                                </button>
+                              )}
                             </>
                           )}
                           {r.status !== "locked" && (
@@ -425,6 +436,143 @@ function MonthlyRun({ user, isSuperAdmin, isAdmin, showToast }: Importable & { i
           onError={(msg) => showToast("err", msg)}
         />
       )}
+
+      {/* Email payslips modal */}
+      {emailRow && (
+        <EmailModal
+          row={emailRow}
+          onClose={() => setEmailRow(null)}
+          showToast={showToast}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Email payslips modal ─────────────────────────────────────────────────────
+
+function EmailModal({ row, onClose, showToast }: {
+  row: { entity_id: string; year: number; month: number; status: string };
+  onClose: () => void;
+  showToast: (k: "ok" | "err", m: string) => void;
+}) {
+  const [preview, setPreview] = useState<EmailPayslipsPreview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [testTo, setTestTo] = useState("");
+  const [busy, setBusy] = useState<"test" | "send" | "">("");
+
+  useEffect(() => {
+    setLoading(true);
+    apiEmailPayslipsPreview(row.entity_id, row.year, row.month)
+      .then(setPreview)
+      .catch((e) => setErr(errMsg(e, "Could not load recipients")))
+      .finally(() => setLoading(false));
+  }, [row.entity_id, row.year, row.month]);
+
+  const isLocked = row.status === "locked";
+  const smtpOff = preview ? !preview.smtp_configured : false;
+
+  const sendTest = async () => {
+    if (!testTo.includes("@")) { showToast("err", "Enter a valid email for the test send"); return; }
+    setBusy("test");
+    try {
+      await apiEmailPayslipsSend(row.entity_id, row.year, row.month, testTo.trim());
+      showToast("ok", `Test payslip sent to ${testTo.trim()}`);
+    } catch (e) {
+      showToast("err", errMsg(e, "Test send failed"));
+    } finally { setBusy(""); }
+  };
+
+  const sendAll = async () => {
+    setBusy("send");
+    try {
+      const res = await apiEmailPayslipsSend(row.entity_id, row.year, row.month);
+      const skipped = res.skipped?.length ?? 0;
+      const failed = res.failed?.length ?? 0;
+      showToast(failed ? "err" : "ok",
+        `${res.sent ?? 0} sent, ${skipped} skipped, ${failed} failed`);
+      onClose();
+    } catch (e) {
+      showToast("err", errMsg(e, "Send failed"));
+    } finally { setBusy(""); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#E2E2DF] p-5">
+        <h3 className="text-[#1A1A1A] font-semibold text-base mb-1 flex items-center gap-2">
+          <Mail size={16} className="text-[#E5202E]" /> Email payslips — {monthLabel(row.month, row.year)}
+        </h3>
+        <p className="text-[#5A5A5A] text-sm mb-4">{row.entity_id} · attaches each employee&apos;s payslip PDF.</p>
+
+        {loading ? (
+          <div className="py-6"><SkeletonRows rows={3} cols={2} /></div>
+        ) : err ? (
+          <p className="text-sm text-[#DC2626] flex items-center gap-1.5"><AlertCircle size={14} /> {err}</p>
+        ) : preview && (
+          <div className="space-y-4">
+            {smtpOff && (
+              <div className="flex items-start gap-2 text-xs rounded-xl px-3 py-2.5 bg-[#D97706]/10 border border-[#D97706]/30 text-[#92400E]">
+                <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                Email isn&apos;t configured on the server yet. Ask IT to set the SMTP details in the backend <code>.env</code>.
+              </div>
+            )}
+            {!isLocked && (
+              <div className="flex items-start gap-2 text-xs rounded-xl px-3 py-2.5 bg-[#D97706]/10 border border-[#D97706]/30 text-[#92400E]">
+                <Lock size={14} className="shrink-0 mt-0.5" />
+                This month isn&apos;t locked. You can send a test, but a real send is only allowed once the month is locked.
+              </div>
+            )}
+
+            <div className="text-sm text-[#1A1A1A]">
+              <span className="font-semibold">{preview.recipients.length}</span> employee
+              {preview.recipients.length === 1 ? "" : "s"} will receive a payslip.
+              {preview.skipped.length > 0 && (
+                <div className="mt-2 text-xs text-[#5A5A5A]">
+                  <span className="font-semibold text-[#D97706]">{preview.skipped.length} skipped</span> — no email on file:
+                  <div className="mt-1 max-h-20 overflow-y-auto font-mono text-[11px] text-[#6B6B6B]">
+                    {preview.skipped.map((s) => s.emp_code).join(", ")}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Test send */}
+            <div className="rounded-xl border border-[#E2E2DF] p-3">
+              <label className="block text-xs font-semibold text-[#5A5A5A] mb-1.5">Send a test to yourself first</label>
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  value={testTo}
+                  onChange={(e) => setTestTo(e.target.value)}
+                  placeholder="you@udyogi.com"
+                  className={`${INPUT} py-2`}
+                />
+                <button
+                  onClick={sendTest}
+                  disabled={busy !== "" || smtpOff}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-white border border-[#E2E2DF] text-[#1A1A1A] hover:bg-[#F4F4F2] rounded-xl transition font-medium disabled:opacity-60 shrink-0"
+                >
+                  {busy === "test" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Test
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-4 py-2.5 text-sm bg-white border border-[#E2E2DF] text-[#5A5A5A] hover:bg-[#F4F4F2] rounded-xl transition font-medium">Cancel</button>
+          <button
+            onClick={sendAll}
+            disabled={busy !== "" || loading || smtpOff || !isLocked || !preview || preview.recipients.length === 0}
+            className="flex items-center gap-2 px-5 py-2.5 text-sm bg-[#E5202E] text-white hover:bg-[#C81824] rounded-xl transition font-semibold disabled:opacity-60"
+            title={!isLocked ? "Lock the month to enable sending" : undefined}
+          >
+            {busy === "send" ? <><Loader2 size={13} className="animate-spin" /> Sending…</> : <><Mail size={14} /> Send to all</>}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

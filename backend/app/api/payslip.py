@@ -19,6 +19,7 @@ from app.services.pdf_generator import (
     generate_pdf, generate_bulk_pdf, generate_salary_sheet_xlsx, num_to_words,
 )
 from app.services.salary_resolver import get_structure_for_period
+from app.services import email_service
 
 router = APIRouter()
 # Mounted at /api/payroll in main.py — payroll operations console (status/lock/unlock).
@@ -354,8 +355,9 @@ def get_salary_sheet_pdf(
     _assert_entity_admin_scope(db, current_user, entity_id)
     contexts = _contexts_for_month(db, current_user, entity_id, year, month)
 
-    _keys = ("basic", "hra", "spl", "cca", "lta", "gross", "pf", "esic", "pt",
-             "ld", "loan", "total_ded", "net", "pf_ern", "esic_ern")
+    _keys = ("basic", "hra", "spl", "cca", "lta", "other_earning", "gross",
+             "pf", "esic", "pt", "ld", "loan", "other_deduction", "total_ded",
+             "net", "pf_ern", "esic_ern")
     totals = {k: 0 for k in _keys}
     rows = []
     for c in contexts:
@@ -363,9 +365,11 @@ def get_salary_sheet_pdf(
             "emp_code": c["emp_code"], "name": c["name"], "designation": c["designation"],
             "pay_days": c["pay_days"] if c["pay_days"] is not None else c["total_days"],
             "basic": c["basic_amount"], "hra": c["hra_amount"], "spl": c["spl_amount"],
-            "cca": c["cca_amount"], "lta": c["lt_amount"], "gross": c["total_earnings"],
+            "cca": c["cca_amount"], "lta": c["lt_amount"],
+            "other_earning": c["other_earning"], "gross": c["total_earnings"],
             "pf": c["pf_emp"], "esic": c["esic_emp"], "pt": c["pt"], "ld": c["ld"],
-            "loan": c["loan_emi"], "total_ded": c["total_deduction"], "net": c["net_pay"],
+            "loan": c["loan_emi"], "other_deduction": c["other_deduction"],
+            "total_ded": c["total_deduction"], "net": c["net_pay"],
             "pf_ern": c["pf_ern"], "esic_ern": c["esic_ern"],
         }
         rows.append(row)
@@ -395,6 +399,99 @@ def get_salary_sheet_pdf(
         content=xlsx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Email payslips (Session 22 #5)
+#   /email/preview — dry run: who gets it / who's skipped (no email). Sends nothing.
+#   /email/send    — real send (LOCKED months only) OR a test send (any status) when
+#                    test_to is set. stdlib SMTP via services/email_service.
+# ---------------------------------------------------------------------------
+
+class EmailPayslipsBody(BaseModel):
+    entity_id: str
+    year:      int
+    month:     int
+    test_to:   Optional[str] = None   # set → send a single sample here instead of a real run
+
+
+def _email_contexts(db, current_user, entity_id, year, month) -> tuple[list[dict], bool]:
+    """Build payslip contexts for an entity/month without side effects, plus whether
+    the month is fully locked. Read-only — unlocked rows are NOT reprocessed here (a
+    real send is locked-only anyway; preview/test just reflect the stored snapshot)."""
+    rows = _entity_payroll_rows(db, entity_id, year, month)
+    if not rows:
+        raise HTTPException(status_code=404, detail="No payroll rows for this entity/month. Process payroll first.")
+    locked = all(pm.status == "locked" for pm in rows)
+    contexts = [_build_response(pm, db) for pm in rows]
+    return contexts, locked
+
+
+@router.post("/email/preview")
+def email_payslips_preview(
+    body: EmailPayslipsBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin", "entity_admin")),
+):
+    """Who would receive an emailed payslip and who would be skipped. Sends nothing."""
+    _assert_entity_admin_scope(db, current_user, body.entity_id)
+    contexts, locked = _email_contexts(db, current_user, body.entity_id, body.year, body.month)
+    preview = email_service.preview_recipients(db, contexts)
+    return {**preview, "locked": locked, "smtp_configured": email_service.smtp_configured()}
+
+
+@router.post("/email/send")
+def email_payslips_send(
+    body: EmailPayslipsBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin", "entity_admin")),
+):
+    """Email payslips. With test_to set, sends ONE sample there (any status). Otherwise
+    a real run — allowed only for a fully LOCKED month so the emailed PDF is final."""
+    _assert_entity_admin_scope(db, current_user, body.entity_id)
+    if not email_service.smtp_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Email is not configured on the server. Ask IT to set SMTP_* in the backend .env.",
+        )
+    contexts, locked = _email_contexts(db, current_user, body.entity_id, body.year, body.month)
+
+    if body.test_to:
+        res = email_service.send_test(
+            db, actor=current_user.emp_code, entity_id=body.entity_id,
+            year=body.year, month=body.month, contexts=contexts, to_addr=body.test_to,
+        )
+        if not res.get("ok"):
+            raise HTTPException(status_code=400, detail=res.get("error", "Test send failed"))
+        return res
+
+    if not locked:
+        raise HTTPException(
+            status_code=400,
+            detail="Payslips can only be emailed for a LOCKED month. Lock the month first.",
+        )
+    res = email_service.deliver_payslips(
+        db, actor=current_user.emp_code, entity_id=body.entity_id,
+        year=body.year, month=body.month, contexts=contexts,
+    )
+    if not res.get("ok"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Send failed"))
+    return res
+
+
+def email_payslips_for_locked_month(db, *, actor, entity_id, year, month) -> dict:
+    """Scheduler entry point (main.py). Emails the month's payslips ONLY if every row
+    is locked; otherwise returns a reason so the caller can record a skip+alert.
+    Side-effect-free context build (locked rows are frozen snapshots)."""
+    rows = _entity_payroll_rows(db, entity_id, year, month)
+    if not rows:
+        return {"ok": False, "reason": "no_rows"}
+    if any(pm.status != "locked" for pm in rows):
+        return {"ok": False, "reason": "not_locked", "employee_count": len(rows)}
+    contexts = [_build_response(pm, db) for pm in rows]
+    return email_service.deliver_payslips(
+        db, actor=actor, entity_id=entity_id, year=year, month=month, contexts=contexts,
     )
 
 

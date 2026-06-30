@@ -29,6 +29,21 @@ class Settings(BaseSettings):
     # absent-equivalent, covered first by leave balance, the remainder charged as LD.
     LATE_DAYS_PER_ABSENT: int = 3
 
+    # Email payslips (Session 22 #5). Outbound SMTP via stdlib smtplib — no new dep.
+    # Leave SMTP_HOST blank to disable email entirely (sending becomes a no-op that
+    # reports "not configured"). Works for company SMTP (LAN) or an app-password
+    # account — only these env values change.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""          # From: address (defaults to SMTP_USER if blank)
+    SMTP_TLS: bool = True        # STARTTLS on connect
+    # Auto-send the previous month's payslips on this day-of-month at this hour
+    # (server local time). Only LOCKED months are sent; unlocked → skipped + alerted.
+    EMAIL_PAYSLIP_DAY: int = 4
+    EMAIL_PAYSLIP_HOUR: int = 9
+
     model_config = SettingsConfigDict(env_file=".env")
 
 

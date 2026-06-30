@@ -109,11 +109,13 @@ def generate_salary_sheet_xlsx(context: dict) -> bytes:
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
     headers = ["#", "Emp Code", "Name", "Designation", "Pay Days", "Basic", "HRA",
-               "SPL", "CCA", "LTA", "Gross", "PF", "ESIC", "PT", "LD", "Loan",
-               "Total Ded", "Net Pay", "PF (Empr)", "ESIC (Empr)"]
+               "SPL", "CCA", "LTA", "Other Earning", "Gross", "PF", "ESIC", "PT",
+               "LD", "Loan", "Other Ded", "Total Ded", "Net Pay", "PF (Empr)",
+               "ESIC (Empr)"]
     # numeric data keys in column order, starting at the "Pay Days" column (E).
-    num_keys = ["pay_days", "basic", "hra", "spl", "cca", "lta", "gross", "pf",
-                "esic", "pt", "ld", "loan", "total_ded", "net", "pf_ern", "esic_ern"]
+    num_keys = ["pay_days", "basic", "hra", "spl", "cca", "lta", "other_earning",
+                "gross", "pf", "esic", "pt", "ld", "loan", "other_deduction",
+                "total_ded", "net", "pf_ern", "esic_ern"]
 
     wb = Workbook()
     ws = wb.active
@@ -148,20 +150,20 @@ def generate_salary_sheet_xlsx(context: dict) -> bytes:
     total_row += [t[k] for k in num_keys[1:]]
     ws.append(total_row)
 
-    # number format + borders for the numeric block (cols E..T) across data + total
+    # number format + borders for the numeric block (cols E..V) across data + total
     first_data, last_row = header_row + 1, ws.max_row
-    for row in ws.iter_rows(min_row=first_data, max_row=last_row, min_col=5, max_col=20):
+    for row in ws.iter_rows(min_row=first_data, max_row=last_row, min_col=5, max_col=22):
         for c in row:
             if isinstance(c.value, (int, float)):
                 c.number_format = "#,##0"
-    for row in ws.iter_rows(min_row=header_row, max_row=last_row, min_col=1, max_col=20):
+    for row in ws.iter_rows(min_row=header_row, max_row=last_row, min_col=1, max_col=22):
         for c in row:
             c.border = border
     for c in ws[last_row]:
         c.font = Font(bold=True)
         c.fill = PatternFill("solid", fgColor="EFEFEF")
 
-    widths = [4, 12, 22, 18, 9] + [10] * 15
+    widths = [4, 12, 22, 18, 9] + [10] * 17
     from openpyxl.utils import get_column_letter
     for idx, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(idx)].width = w

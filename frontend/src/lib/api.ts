@@ -497,6 +497,39 @@ export async function apiDownloadSalarySheet(entity_id: string, year: number, mo
   _saveBlob(response.data as Blob, `salary_sheet_${entity_id}_${year}_${String(month).padStart(2, "0")}.xlsx`);
 }
 
+// ─── Email payslips (Session 22 #5) ───────────────────────────────────────────
+
+export interface EmailPayslipsPreview {
+  total: number;
+  recipients: { emp_code: string; name: string; email: string }[];
+  skipped: { emp_code: string; name: string }[];
+  locked: boolean;
+  smtp_configured: boolean;
+}
+
+export async function apiEmailPayslipsPreview(
+  entity_id: string, year: number, month: number,
+): Promise<EmailPayslipsPreview> {
+  const { data } = await api.post("/api/payslip/email/preview", { entity_id, year, month });
+  return data;
+}
+
+export interface EmailPayslipsResult {
+  ok: boolean;
+  total?: number;
+  sent?: number;
+  skipped?: { emp_code: string; name: string }[];
+  failed?: { emp_code: string; error: string }[];
+  test_to?: string;
+}
+
+export async function apiEmailPayslipsSend(
+  entity_id: string, year: number, month: number, test_to?: string,
+): Promise<EmailPayslipsResult> {
+  const { data } = await api.post("/api/payslip/email/send", { entity_id, year, month, test_to });
+  return data;
+}
+
 export async function apiResetPassword(emp_code: string) {
   const { data } = await api.post("/api/admin/reset-password", { emp_code });
   return data;
