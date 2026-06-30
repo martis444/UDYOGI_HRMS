@@ -9,11 +9,11 @@ import { ENTITIES } from "@/store/entity";
 import { entityColor } from "@/lib/entities";
 import {
   apiGetLoans, apiGetLoan, apiCreateLoan, apiUpdateLoan, apiOverrideLoanEmi, apiCloseLoan,
-  apiGetEmployees, type LoanRow, type LoanScheduleRow,
+  apiDeleteLoan, apiGetEmployees, type LoanRow, type LoanScheduleRow,
 } from "@/lib/api";
 import {
   HandCoins, Plus, Search, Pencil, CalendarRange, X, Loader2, AlertCircle,
-  CheckCircle2, Lock, Archive, Info,
+  CheckCircle2, Lock, Archive, Info, Trash2,
 } from "lucide-react";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -57,6 +57,7 @@ export default function LoansPage() {
   const [editLoan, setEditLoan] = useState<LoanRow | null>(null);
   const [manageLoan, setManageLoan] = useState<LoanRow | null>(null);
   const [closeLoan, setCloseLoan] = useState<LoanRow | null>(null);
+  const [deleteLoan, setDeleteLoan] = useState<LoanRow | null>(null);
 
   const showToast = useCallback((kind: "ok" | "err", msg: string) => { setToast({ kind, msg }); setTimeout(() => setToast(null), 4000); }, []);
 
@@ -151,6 +152,7 @@ export default function LoansPage() {
                         <button onClick={() => setManageLoan(l)} title="Manage months" aria-label={`Manage months for ${l.emp_code}`} className="press p-1.5 rounded-lg text-[#2563EB] hover:bg-[#2563EB]/10 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/40"><CalendarRange size={14} /></button>
                         <button onClick={() => setEditLoan(l)} title="Edit" aria-label={`Edit loan for ${l.emp_code}`} className="press p-1.5 rounded-lg text-[#6B6B6B] hover:bg-black/[0.06] hover:text-[#1A1A1A] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#E5202E]/30"><Pencil size={14} /></button>
                         {l.status !== "closed" && <button onClick={() => setCloseLoan(l)} title="Close" aria-label={`Close loan for ${l.emp_code}`} className="press p-1.5 rounded-lg text-[#6B6B6B] hover:bg-[#D97706]/10 hover:text-[#D97706] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D97706]/40"><Archive size={14} /></button>}
+                        <button onClick={() => setDeleteLoan(l)} title="Delete" aria-label={`Delete loan for ${l.emp_code}`} className="press p-1.5 rounded-lg text-[#6B6B6B] hover:bg-[#DC2626]/10 hover:text-[#DC2626] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]/40"><Trash2 size={14} /></button>
                       </div>
                     </td>
                   </tr>
@@ -168,6 +170,11 @@ export default function LoansPage() {
         <ConfirmModal title={`Close loan for ${closeLoan.name ?? closeLoan.emp_code}?`} body="No further EMIs will be deducted. Outstanding stays on record." confirmLabel="Close loan"
           onClose={() => setCloseLoan(null)}
           onConfirm={async () => { try { await apiCloseLoan(closeLoan.id); showToast("ok", "Loan closed"); } catch (e) { showToast("err", errMsg(e, "Close failed")); } finally { setCloseLoan(null); load(); } }} />
+      )}
+      {deleteLoan && (
+        <ConfirmModal title={`Delete loan for ${deleteLoan.name ?? deleteLoan.emp_code}?`} body="The loan and its EMI schedule are permanently removed. Locked payslips keep any EMI already deducted; unlocked months drop it on the next run. This is audited." confirmLabel="Delete loan" danger
+          onClose={() => setDeleteLoan(null)}
+          onConfirm={async () => { try { await apiDeleteLoan(deleteLoan.id); showToast("ok", "Loan deleted"); } catch (e) { showToast("err", errMsg(e, "Delete failed")); } finally { setDeleteLoan(null); load(); } }} />
       )}
 
       {toast && <div role="status" aria-live="polite" className={`fixed bottom-5 right-5 z-50 flex items-start gap-2 px-4 py-3 rounded-xl shadow-2xl text-sm max-w-sm text-white ${toast.kind === "ok" ? "bg-[#16A34A]" : "bg-[#DC2626]"}`}>{toast.kind === "ok" ? <CheckCircle2 size={16} className="shrink-0 mt-0.5" /> : <AlertCircle size={16} className="shrink-0 mt-0.5" />}<span>{toast.msg}</span></div>}
@@ -428,7 +435,7 @@ function ManageMonths({ loan, onClose, onChanged, onToast }: { loan: LoanRow; on
   );
 }
 
-function ConfirmModal({ title, body, confirmLabel, onClose, onConfirm }: { title: string; body: string; confirmLabel: string; onClose: () => void; onConfirm: () => void }) {
+function ConfirmModal({ title, body, confirmLabel, onClose, onConfirm, danger }: { title: string; body: string; confirmLabel: string; onClose: () => void; onConfirm: () => void; danger?: boolean }) {
   const panelRef = useDialog<HTMLDivElement>(onClose);
   const titleId = useId();
   return (
@@ -446,7 +453,7 @@ function ConfirmModal({ title, body, confirmLabel, onClose, onConfirm }: { title
         <p className="text-[#5A5A5A] text-sm mb-5">{body}</p>
         <div className="flex items-center justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2.5 text-sm bg-white border border-[#E2E2DF] text-[#5A5A5A] hover:bg-[#F4F4F2] rounded-xl transition font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-[#E5202E]/30">Cancel</button>
-          <button onClick={onConfirm} className="px-5 py-2.5 text-sm bg-[#E5202E] text-white hover:bg-[#C81824] rounded-xl transition font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#E5202E]/40">{confirmLabel}</button>
+          <button onClick={onConfirm} className={`px-5 py-2.5 text-sm text-white rounded-xl transition font-semibold focus:outline-none focus-visible:ring-2 ${danger ? "bg-[#DC2626] hover:bg-[#B91C1C] focus-visible:ring-[#DC2626]/40" : "bg-[#E5202E] hover:bg-[#C81824] focus-visible:ring-[#E5202E]/40"}`}>{confirmLabel}</button>
         </div>
       </div>
     </div>

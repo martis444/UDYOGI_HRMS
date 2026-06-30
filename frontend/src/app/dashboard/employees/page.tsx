@@ -4,11 +4,11 @@ import { useEffect, useState, useCallback } from "react";
 import GlassCard from "@/components/ui/GlassCard";
 import Link from "next/link";
 import { useEntityStore } from "@/store/entity";
-import { apiGetEmployees, apiDownloadEmployeeExport, apiGetActiveLocations } from "@/lib/api";
+import { apiGetEmployees, apiDownloadEmployeeExport, apiGetActiveLocations, apiDeleteEmployee } from "@/lib/api";
 import { useAuth, isAdminRole } from "@/lib/auth";
 import {
   Users, Plus, Upload, Download, Search,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Trash2, Loader2, AlertCircle, CheckCircle2,
 } from "lucide-react";
 
 interface EmpItem {
@@ -73,6 +73,10 @@ export default function EmployeesPage() {
   const { user } = useAuth();
   const { selected: entityFilter } = useEntityStore();
 
+  const [deleteTarget, setDeleteTarget] = useState<EmpItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+
   const [employees, setEmployees] = useState<EmpItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -127,6 +131,28 @@ export default function EmployeesPage() {
   useEffect(() => { setPage(1); }, [entityFilter, search, statusFilter, locationFilter, departmentFilter, designationFilter]);
 
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await apiDeleteEmployee(deleteTarget.emp_code);
+      setToast({ kind: "ok", msg: `${deleteTarget.name} deactivated` });
+      setDeleteTarget(null);
+      fetchEmployees();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Delete failed";
+      setToast({ kind: "err", msg });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const handleExport = async () => {
     setExporting(true);
@@ -315,12 +341,24 @@ export default function EmployeesPage() {
                       <td className="px-4 py-3.5 text-[#5A5A5A] text-xs hidden xl:table-cell">{emp.designation ?? "—"}</td>
                       <td className="px-4 py-3.5"><StatusBadge status={emp.status} /></td>
                       <td className="px-4 py-3.5 text-right">
-                        <Link
-                          href={`/dashboard/employees/${emp.emp_code}`}
-                          className="text-xs font-semibold text-[#E5202E] hover:text-[#C81824] hover:underline whitespace-nowrap"
-                        >
-                          View →
-                        </Link>
+                        <div className="flex items-center justify-end gap-3">
+                          <Link
+                            href={`/dashboard/employees/${emp.emp_code}`}
+                            className="text-xs font-semibold text-[#E5202E] hover:text-[#C81824] hover:underline whitespace-nowrap"
+                          >
+                            View →
+                          </Link>
+                          {isAdmin && emp.status !== "inactive" && (
+                            <button
+                              onClick={() => setDeleteTarget(emp)}
+                              title="Delete (deactivate) employee"
+                              aria-label={`Delete ${emp.name}`}
+                              className="text-[#6B6B6B] hover:text-[#DC2626] transition p-1 rounded-lg hover:bg-[#DC2626]/8"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -358,6 +396,38 @@ export default function EmployeesPage() {
           </div>
         )}
       </GlassCard>
+
+      {/* Delete confirm modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#E2E2DF] p-5">
+            <h3 className="text-[#1A1A1A] font-semibold text-base mb-2 flex items-center gap-2">
+              <Trash2 size={16} className="text-[#DC2626]" /> Delete {deleteTarget.name}?
+            </h3>
+            <p className="text-[#5A5A5A] text-sm mb-5">
+              This marks <span className="font-semibold text-[#1A1A1A]">{deleteTarget.emp_code}</span> as
+              <span className="font-semibold"> inactive</span> and sets their exit date. Payroll and statutory
+              records are preserved (employees are never hard-deleted). This is audited.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={() => setDeleteTarget(null)} disabled={deleting}
+                className="px-4 py-2.5 text-sm bg-white border border-[#E2E2DF] text-[#5A5A5A] hover:bg-[#F4F4F2] rounded-xl transition font-medium disabled:opacity-60">Cancel</button>
+              <button onClick={confirmDelete} disabled={deleting}
+                className="flex items-center gap-2 px-5 py-2.5 text-sm bg-[#DC2626] text-white hover:bg-[#B91C1C] rounded-xl transition font-semibold disabled:opacity-60">
+                {deleting ? <><Loader2 size={14} className="animate-spin" /> Deleting…</> : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-5 right-5 z-50 flex items-start gap-2 px-4 py-3 rounded-xl shadow-2xl text-sm max-w-sm text-white ${toast.kind === "ok" ? "bg-[#16A34A]" : "bg-[#DC2626]"}`}>
+          {toast.kind === "ok" ? <CheckCircle2 size={16} className="shrink-0 mt-0.5" /> : <AlertCircle size={16} className="shrink-0 mt-0.5" />}
+          <span>{toast.msg}</span>
+        </div>
+      )}
     </div>
   );
 }

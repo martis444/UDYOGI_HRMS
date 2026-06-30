@@ -283,6 +283,11 @@ export async function apiCloseLoan(id: number): Promise<LoanRow> {
   return data;
 }
 
+export async function apiDeleteLoan(id: number): Promise<{ deleted: number; message: string }> {
+  const { data } = await api.delete(`/api/loans/${id}`);
+  return data;
+}
+
 // ─── Payroll console (status / process / lock / unlock) ───────────────────────
 
 export interface PayrollMonthRow {

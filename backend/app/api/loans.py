@@ -270,3 +270,34 @@ def close_loan(
                     old_values={"status": old}, new_values={"status": "closed"}))
     db.commit()
     return _serialize(loan)
+
+
+@router.delete("/{loan_id}")
+def delete_loan(
+    loan_id: int,
+    current_user: User = Depends(require_role("super_admin", "entity_admin")),
+    db: Session = Depends(get_db),
+):
+    """Hard-delete a loan and its EMI schedule rows (entity-scoped, audited). Use to
+    remove a mistakenly-created loan. Locked payroll keeps its snapshot (the EMI
+    already deducted); any unlocked month drops the EMI on its next reprocess."""
+    loan = db.get(Loan, loan_id)
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+    _assert_loan_access(db, current_user, loan)
+
+    sched_count = (
+        db.query(LoanEmiSchedule).filter(LoanEmiSchedule.loan_id == loan_id).delete()
+    )
+    db.add(AuditLog(
+        user_code=current_user.emp_code, action="LOAN_DELETE",
+        table_name="loans", record_id=str(loan_id),
+        old_values={
+            "emp_code": loan.emp_code, "loan_type": loan.loan_type,
+            "principal": float(loan.principal), "outstanding": float(loan.outstanding),
+            "status": loan.status, "schedule_rows_removed": sched_count,
+        },
+    ))
+    db.delete(loan)
+    db.commit()
+    return {"deleted": loan_id, "message": "Loan deleted"}
