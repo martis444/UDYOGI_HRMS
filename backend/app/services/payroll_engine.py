@@ -1,7 +1,7 @@
 import calendar
 import math
 from datetime import date, datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -13,6 +13,14 @@ from app.services.period_calculator import get_working_days_info
 from app.services.salary_resolver import get_structure_for_period
 from app.services.loan_service import apply_emi_on_payroll
 from app.services.late_service import compute_late_effects
+
+
+def round_half_up(x) -> int:
+    """Round to the nearest rupee, .5 always UP (standard payroll rounding).
+    Python's built-in round() uses banker's rounding (half-to-even), which under-rounds
+    e.g. round(1984.5) → 1984; this gives 1985. Used for every prorated amount + PF so
+    the figures match the reference payroll."""
+    return int(Decimal(str(x)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
@@ -268,12 +276,23 @@ def process_payroll_month(
     # amount: when LOP reduces pay, the deductions reduce with it (the /30 factor
     # carries the unpaid days). Caps (PF ₹1,800/₹2,340) and ESIC eligibility (on the
     # committed gross ≤ ₹21,000) are unchanged. PT slab is re-resolved on the paid gross.
-    f          = float(payable_factor)
-    basic_paid = float(data["basic"]) * f
-    gross_paid = float(data["gross"]) * f
+    # Prorate each statutory component and round HALF-UP (matches the reference payroll;
+    # Python's round() is banker's and under-rounds .5 cases). Exact Decimal arithmetic so
+    # float error never flips a .5. gross_paid = the SUM of the rounded components, and PF
+    # is on the rounded paid basic — so the deductions reconcile exactly with the
+    # per-component amounts shown on the payslip/sheet.
+    def _paid(field):
+        return round_half_up(Decimal(str(data[field] or 0)) * payable_factor)
+    basic_paid = _paid("basic")
+    hra_paid   = _paid("hra")
+    spl_paid   = _paid("spl")
+    cca_paid   = _paid("cca")
+    lt_paid    = _paid("leave_travel")
+    med_paid   = _paid("medical")
+    gross_paid = basic_paid + hra_paid + spl_paid + cca_paid + lt_paid + med_paid
     if data["pf_emp"] or data["pf_ern"]:               # PF applicable
-        data["pf_emp"] = min(round(basic_paid * 0.12), 1800)
-        data["pf_ern"] = min(round(basic_paid * 0.13), 2340)
+        data["pf_emp"] = min(round_half_up(Decimal(basic_paid) * Decimal("0.12")), 1800)
+        data["pf_ern"] = min(round_half_up(Decimal(basic_paid) * Decimal("0.13")), 2340)
     # ESIC wages = ALL earnings (statutory gross + Other Earning + Other Allowance),
     # per the ESI Act. Eligibility ceiling (≤ ₹21,000) is on the COMMITTED total wages;
     # the 0.75%/3.25% contribution is on the PAID total wages. Re-evaluated here (not the
@@ -306,11 +325,12 @@ def process_payroll_month(
     #   other_allowance = the per-month one-off reward (attendance CSV, Session 20)
     #   other_earning   = the fixed monthly Other Earning component (salary record)
     # other_deduction is already inside total_deduction.
-    stat_earnings  = Decimal(str(data["gross"]))             # basic+hra+spl+cca+lt
+    # Earnings = the SUM of the rounded prorated components (gross_paid) + full other
+    # earnings, so the stored net matches the per-component figures on the sheet exactly.
     other_allow    = Decimal(str(data["other_allowance"]))
     other_earn     = Decimal(str(data.get("other_earning") or 0))
     total_ded      = Decimal(str(data["total_deduction"]))
-    total_earnings = stat_earnings * payable_factor + other_allow + other_earn
+    total_earnings = Decimal(gross_paid) + other_allow + other_earn
     prorated_net   = float(total_earnings - total_ded)
 
     now = datetime.now(timezone.utc)

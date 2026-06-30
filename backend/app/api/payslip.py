@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,7 +14,7 @@ from app.core.dependencies import get_current_user, require_role
 from app.models.employee import (
     AuditLog, Department, Employee, Entity, LeaveBalance, Location, PayrollMonth, User,
 )
-from app.services.payroll_engine import compute_payroll, process_payroll_month
+from app.services.payroll_engine import compute_payroll, process_payroll_month, round_half_up
 from app.services.leave_engine import resolve_leave_balance
 from app.services.pdf_generator import (
     generate_pdf, generate_bulk_pdf, generate_salary_sheet_xlsx, num_to_words,
@@ -94,10 +95,11 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
     # 1.0 when no attendance (pay_days = full divisor). Factor never touches deductions.
     divisor      = settings.PER_DAY_DIVISOR
     pay_days_val = pm.pay_days
+    # Exact Decimal factor, capped at 1.0 — must match process_payroll_month's proration.
     factor = (
-        min(1.0, float(pay_days_val) / divisor)
+        min(Decimal(1), Decimal(int(pay_days_val)) / Decimal(divisor))
         if (pay_days_val is not None and divisor > 0)
-        else 1.0
+        else Decimal(1)
     )
 
     basic_r = float(pm.basic or 0)
@@ -111,12 +113,14 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
     # Un-merged (Session 22): OTHER EARNING and OTHER ALLOW are two SEPARATE paid
     # lines, both non-statutory (outside the PF/ESIC/PT base).
 
-    basic_amt = round(basic_r * factor)
-    hra_amt   = round(hra_r   * factor)
-    spl_amt   = round(spl_r   * factor)
-    cca_amt   = round(cca_r   * factor)
-    lt_amt    = round(lt_r    * factor)
-    med_amt   = round(med_r   * factor)
+    # round HALF-UP on the exact Decimal product (matches the engine's per-component
+    # proration; Python's round() is banker's and under-rounds .5 cases by ₹1).
+    basic_amt = round_half_up(Decimal(str(pm.basic or 0)) * factor)
+    hra_amt   = round_half_up(Decimal(str(pm.hra or 0))   * factor)
+    spl_amt   = round_half_up(Decimal(str(pm.spl or 0))   * factor)
+    cca_amt   = round_half_up(Decimal(str(pm.cca or 0))   * factor)
+    lt_amt    = round_half_up(Decimal(str(pm.leave_travel or 0)) * factor)
+    med_amt   = round_half_up(Decimal(str(pm.medical or 0)) * factor)
 
     # Medical is in the statutory gross (Session 22) → prorates with basic/hra/etc.
     gross_rate     = int(basic_r + hra_r + spl_r + cca_r + lt_r + med_r)
