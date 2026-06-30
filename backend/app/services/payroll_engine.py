@@ -288,9 +288,10 @@ def process_payroll_month(
     else:
         data["esic_emp"] = 0
         data["esic_ern"] = 0
-    # PT slab re-resolved on the PAID total wages (same base as ESIC): an absent employee
-    # whose earnings fall into a lower band pays that band's PT, or ₹0 below the threshold.
-    # Full-attendance months are unchanged (wages_paid == committed total wages).
+    # PT slab on the PAID TOTAL wages (gross_paid + Other Earning + Other Allowance = the
+    # Earn Total), same base as ESIC. Prorated by attendance (absent employees fall to a
+    # lower band, or ₹0). Other Allowance COUNTS — it can push total wages across a slab
+    # boundary (e.g. SUKUMAR ₹14,747 statutory + ₹263 = ₹15,010 → the ₹130 slab, not ₹110).
     if data.get("pt_applicable"):
         data["pt"] = get_pt_amount(wages_paid, data["pt_state"], data["gender"] or "all", month, db)
     data["total_deduction"] = (
