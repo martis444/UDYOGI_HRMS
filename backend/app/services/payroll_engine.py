@@ -270,14 +270,16 @@ def process_payroll_month(
     if data["pf_emp"] or data["pf_ern"]:               # PF applicable
         data["pf_emp"] = min(round(basic_paid * 0.12), 1800)
         data["pf_ern"] = min(round(basic_paid * 0.13), 2340)
-    # Mirror PF: reprorate ESIC whenever the base run charged it (which already encodes
+    # ESIC wages = ALL paid earnings (the ESI Act's 'wages' is broad), i.e. the
+    # statutory gross PLUS Other Earning + Other Allowance — NOT just the statutory
+    # components. Both are full-value (the per-month additions aren't prorated).
+    # Mirror PF: reprorate whenever the base run charged ESIC (which already encodes
     # esic_applicable AND the committed-gross ≤ ₹21,000 ceiling). No `gross_paid > 0`
-    # guard — a fully-absent month has gross_paid = 0, so ESIC must reprorate to
-    # ceil(0) = 0 (matching PF). The old guard skipped the zeroing and left a full-month
-    # ESIC on employees who earned nothing.
+    # guard — a fully-absent month → base 0 → ceil(0) = 0 (matching PF).
+    esic_base = gross_paid + float(data["other_earning"] or 0) + float(data["other_allowance"] or 0)
     if data["esic_emp"] or data["esic_ern"]:
-        data["esic_emp"] = math.ceil(gross_paid * 0.0075)
-        data["esic_ern"] = math.ceil(gross_paid * 0.0325)
+        data["esic_emp"] = math.ceil(esic_base * 0.0075)
+        data["esic_ern"] = math.ceil(esic_base * 0.0325)
     # PT is re-resolved on the PAID gross slab (not the committed gross): an absent
     # employee whose earnings fall into a lower band pays that band's PT, or ₹0 below
     # the threshold. Full-attendance months are unchanged (gross_paid == committed gross).
