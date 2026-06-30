@@ -998,12 +998,16 @@ async def parse_attendance_csv(file: UploadFile, db: Session) -> list[dict]:
             "remarks": str(raw.get("Remarks", "")).strip() or None,
             # Per-month ad-hoc adjustments (optional). None when the cell is blank
             # so the commit can SKIP it (rule 7) instead of overwriting with 0.
-            # "Other Earning" is the new header; still accept the legacy "Other Allowance".
-            # Stored in payroll_months.other_allowance (the per-month reward bucket).
+            # "Other Allowance" is the OTHER ALLOW per-month bucket (un-merged,
+            # Session 22) → payroll_months.other_allowance; still accept the legacy
+            # "Other Earning"/"Other Allow" headers from older files.
             "other_allowance": _opt_amount(
-                raw.get("Other Earning", raw.get("Other Allowance", raw.get("Other Allow", "")))
+                raw.get("Other Allowance", raw.get("Other Earning", raw.get("Other Allow", "")))
             ),
             "other_deduction": _opt_amount(raw.get("Other Deduction", raw.get("Other Ded", ""))),
+            # Manual per-month deductions (Session 22) → payroll_months.income_tax / nps.
+            "income_tax": _opt_amount(raw.get("Income Tax", raw.get("Income Tax(Manual)", ""))),
+            "nps": _opt_amount(raw.get("NPS", raw.get("National Pension", ""))),
         })
 
     return rows

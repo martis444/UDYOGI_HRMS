@@ -21,10 +21,12 @@ from app.models.employee import AuditLog, Employee, SalaryStructure
 from app.services.salary_resolver import get_active_structure
 
 # Salary components carried forward / synced to the employees row.
-_COMPONENTS = ("basic", "hra", "spl", "cca", "leave_travel", "other_earning")
+# medical (Session 22) is a paid earning IN gross, so it carries forward and counts
+# toward statutory gross; other_earning is paid but NON-statutory (excluded from gross).
+_COMPONENTS = ("basic", "hra", "spl", "cca", "leave_travel", "medical", "other_earning")
 
 # Components that count toward statutory gross (other_earning is excluded — paid but non-statutory).
-_STATUTORY = ("basic", "hra", "spl", "cca", "leave_travel")
+_STATUTORY = ("basic", "hra", "spl", "cca", "leave_travel", "medical")
 
 
 def _to_dec(v) -> Decimal:

@@ -38,15 +38,18 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
     spl             = float(src.spl or 0)
     cca             = float(src.cca or 0)
     leave_travel    = float(src.leave_travel or 0)
+    medical         = float(src.medical or 0)
     other_allowance = float(src.other_allowance or 0)
-    # Other Earning is a PAID, non-statutory monthly earning. The legacy
-    # record-only `other_allowance` salary field is merged into it (folded here so
-    # the merge holds even before the one-time data backfill runs).
-    other_earning   = float(src.other_earning or 0) + other_allowance
+    # OTHER EARNING and OTHER ALLOW are two SEPARATE paid, non-statutory monthly
+    # earnings (Session 22 un-merge — #1's display merge reversed). other_earning is
+    # the fixed structure component; other_allowance is the per-month value (preserved
+    # from the existing row in process_payroll_month).
+    other_earning   = float(src.other_earning or 0)
 
-    # Statutory gross: leave_travel included; other_allowance excluded from PF/ESIC/PT base.
-    # DA was folded into basic in 15.1 — PF base is `basic` only now.
-    gross    = basic + hra + spl + cca + leave_travel
+    # Statutory gross now INCLUDES medical (Session 22: medical is a paid earning in
+    # gross, so ESIC/PT pick it up). PF base stays `basic` only (12% of basic).
+    # other_earning / other_allowance stay OUTSIDE the PF/ESIC/PT base.
+    gross    = basic + hra + spl + cca + leave_travel + medical
     pf_base  = basic
 
     pf_emp = min(round(pf_base * 0.12), 1800) if emp.pf_applicable else 0
@@ -69,8 +72,9 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
 
     loan_emi        = 0
     other_deduction = 0
-    total_deduction = pf_emp + esic_emp + int(pt) + loan_emi + other_deduction
-    # other_allowance is RECORD-ONLY (ad-hoc payout tracked outside payroll) — NOT in net.
+    income_tax      = 0   # manual per-month deduction (preserved from the existing row in process)
+    nps             = 0   # manual per-month deduction (preserved from the existing row in process)
+    total_deduction = pf_emp + esic_emp + int(pt) + loan_emi + other_deduction + income_tax + nps
     net_pay         = gross - total_deduction
     total_days      = calendar.monthrange(year, month)[1]
 
@@ -85,6 +89,7 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
         "spl":             spl,
         "cca":             cca,
         "leave_travel":    leave_travel,
+        "medical":         medical,
         "other_allowance": other_allowance,
         "other_earning":   other_earning,
         "gross":           gross,
@@ -95,6 +100,8 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
         "pt":              pt,
         "loan_emi":        loan_emi,
         "other_deduction": other_deduction,
+        "income_tax":      income_tax,
+        "nps":             nps,
         "total_deduction": total_deduction,
         "net_pay":         net_pay,
         "total_days":      total_days,
@@ -146,6 +153,12 @@ def process_payroll_month(
     # other_allowance is a full-value addition to net (a reward, never prorated).
     data["other_allowance"] = float(existing.other_allowance or 0) if existing else 0.0
     data["other_deduction"] = float(existing.other_deduction or 0) if existing else 0.0
+    # Income Tax + NPS are MANUAL per-month deductions (Session 22) — same preserve-
+    # across-reprocess rule as other_deduction. compute_payroll always returns 0, so
+    # without this a payslip view (reprocesses unlocked rows) would wipe an entered
+    # value. Set via the attendance CSV or the per-employee override; new rows = 0.
+    data["income_tax"] = float(existing.income_tax or 0) if existing else 0.0
+    data["nps"]        = float(existing.nps or 0) if existing else 0.0
 
     # Loan/advance EMI for this period. apply_emi_on_payroll mutates the loan ledger
     # (decrements outstanding once per period; idempotent on reprocess). loan_emi feeds
@@ -154,7 +167,8 @@ def process_payroll_month(
     loan_emi = float(apply_emi_on_payroll(emp_code, year, month, db))
     data["loan_emi"] = loan_emi
     data["total_deduction"] = (
-        data["pf_emp"] + data["esic_emp"] + int(data["pt"]) + loan_emi + data["other_deduction"]
+        data["pf_emp"] + data["esic_emp"] + int(data["pt"]) + loan_emi
+        + data["other_deduction"] + data["income_tax"] + data["nps"]
     )
 
     # Attendance for this pay run uses the 26th cutoff cycle (15.3): pay period
@@ -228,6 +242,7 @@ def process_payroll_month(
     data["total_deduction"] = (
         data["pf_emp"] + data["esic_emp"] + int(data["pt"])
         + data["loan_emi"] + data["other_deduction"] + data["ld"]
+        + data["income_tax"] + data["nps"]
     )
 
     # ── Period + working days (stored for display; not used for proration) ─────
@@ -262,6 +277,7 @@ def process_payroll_month(
     data["total_deduction"] = (
         data["pf_emp"] + data["esic_emp"] + int(data["pt"])
         + data["loan_emi"] + data["other_deduction"] + data["ld"]
+        + data["income_tax"] + data["nps"]
     )
 
     # Earnings prorate by payable_factor; deductions already reflect the paid amount.
@@ -300,9 +316,10 @@ def process_payroll_month(
     )
 
     if existing:
-        for field in ("basic", "hra", "spl", "cca", "leave_travel", "other_allowance",
-                      "other_earning", "gross", "pf_emp", "pf_ern", "esic_emp", "esic_ern", "pt",
-                      "loan_emi", "other_deduction"):
+        for field in ("basic", "hra", "spl", "cca", "leave_travel", "medical",
+                      "other_allowance", "other_earning", "gross",
+                      "pf_emp", "pf_ern", "esic_emp", "esic_ern", "pt",
+                      "loan_emi", "other_deduction", "income_tax", "nps"):
             setattr(existing, field, data[field])
         existing.net_pay = prorated_net
         for field, val in att_fields.items():
@@ -321,6 +338,7 @@ def process_payroll_month(
             spl             = data["spl"],
             cca             = data["cca"],
             leave_travel    = data["leave_travel"],
+            medical         = data["medical"],
             other_allowance = data["other_allowance"],
             other_earning   = data["other_earning"],
             gross           = data["gross"],
@@ -331,6 +349,8 @@ def process_payroll_month(
             pt              = data["pt"],
             loan_emi        = data["loan_emi"],
             other_deduction = data["other_deduction"],
+            income_tax      = data["income_tax"],
+            nps             = data["nps"],
             # total_deduction is a GENERATED ALWAYS column — PostgreSQL computes it
             net_pay         = prorated_net,
             status          = "processed",

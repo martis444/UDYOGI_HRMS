@@ -350,6 +350,14 @@ export async function apiLateOverride(
   return data;
 }
 
+// Admin override of manual Income Tax / NPS deductions on an UNLOCKED month (Session 22).
+export async function apiITNpsOverride(
+  body: { emp_code: string; year: number; month: number; income_tax?: number; nps?: number; reason: string },
+): Promise<{ emp_code: string; year: number; month: number; income_tax: number; nps: number; net_pay: number }> {
+  const { data } = await api.post("/api/payroll/it-nps-override", body);
+  return data;
+}
+
 // ─── Payslip ─────────────────────────────────────────────────────────────────
 
 export async function apiGetPayslip(emp_code: string, year: number, month: number) {

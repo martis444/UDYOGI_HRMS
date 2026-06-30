@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import GlassCard from "@/components/ui/GlassCard";
 import { Skeleton, SkeletonRows } from "@/components/ui/Skeleton";
 import { useAuth, isAdminRole } from "@/lib/auth";
-import { apiGetPayslip, apiDownloadPayslipPdf, apiGetEmployees, apiLateOverride } from "@/lib/api";
+import { apiGetPayslip, apiDownloadPayslipPdf, apiGetEmployees, apiLateOverride, apiITNpsOverride } from "@/lib/api";
 import { APP_META } from "@/lib/appMeta";
 import { FileText, Download, Printer, Search, Clock, Pencil, X, Loader2 } from "lucide-react";
 
@@ -23,6 +23,7 @@ interface PayslipData {
   spl: number;
   cca: number;
   leave_travel: number;
+  medical: number;
   other_allowance: number;
   other_earning: number;
   gross: number;
@@ -37,6 +38,8 @@ interface PayslipData {
   cca_amount: number;
   lt_rate: number;
   lt_amount: number;
+  medical_rate: number;
+  medical_amount: number;
   gross_rate: number;
   total_earnings: number;
   // deductions
@@ -48,6 +51,8 @@ interface PayslipData {
   loan_emi: number;
   ld: number;
   other_deduction: number;
+  income_tax: number;
+  nps: number;
   total_deduction: number;
   net_pay: number;
   // attendance
@@ -247,8 +252,24 @@ function PayslipDocument({ data }: { data: PayslipData }) {
               )}
             </tr>
 
-            {/* Row 6: OTHER EARNING (conditional) | OTHER DED (conditional) — Other Earning = fixed + per-month reward */}
-            {(data.other_earning > 0 || data.other_deduction > 0) && (
+            {/* Row 6: MEDICAL (always — paid earning in gross) | MISCELLANEOUS DED (conditional) */}
+            <tr>
+              <td style={tdStyle}></td>
+              <td style={tdStyle}>MEDICAL</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.medical_rate)}</td>
+              <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.medical_amount)}</td>
+              {data.other_deduction > 0 ? (
+                <>
+                  <td style={tdStyle}>MISCELLANEOUS</td>
+                  <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.other_deduction)}</td>
+                </>
+              ) : (
+                <><td style={tdStyle}></td><td style={tdStyle}></td></>
+              )}
+            </tr>
+
+            {/* Row 7: OTHER EARNING (conditional) | INCOME TAX (conditional) */}
+            {(data.other_earning > 0 || data.income_tax > 0) && (
               <tr>
                 <td style={tdStyle}></td>
                 {data.other_earning > 0 ? (
@@ -260,10 +281,34 @@ function PayslipDocument({ data }: { data: PayslipData }) {
                 ) : (
                   <><td style={tdStyle}></td><td style={tdStyle}></td><td style={tdStyle}></td></>
                 )}
-                {data.other_deduction > 0 ? (
+                {data.income_tax > 0 ? (
                   <>
-                    <td style={tdStyle}>OTHER DED</td>
-                    <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.other_deduction)}</td>
+                    <td style={tdStyle}>INCOME TAX</td>
+                    <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.income_tax)}</td>
+                  </>
+                ) : (
+                  <><td style={tdStyle}></td><td style={tdStyle}></td></>
+                )}
+              </tr>
+            )}
+
+            {/* Row 8: OTHER ALLOW (conditional) | NATIONAL PENSION / NPS (conditional) */}
+            {(data.other_allowance > 0 || data.nps > 0) && (
+              <tr>
+                <td style={tdStyle}></td>
+                {data.other_allowance > 0 ? (
+                  <>
+                    <td style={tdStyle}>OTHER ALLOW</td>
+                    <td style={{ ...tdStyle, ...amtStyle }}></td>
+                    <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.other_allowance)}</td>
+                  </>
+                ) : (
+                  <><td style={tdStyle}></td><td style={tdStyle}></td><td style={tdStyle}></td></>
+                )}
+                {data.nps > 0 ? (
+                  <>
+                    <td style={tdStyle}>NATIONAL PENSION</td>
+                    <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.nps)}</td>
                   </>
                 ) : (
                   <><td style={tdStyle}></td><td style={tdStyle}></td></>
@@ -402,6 +447,8 @@ export default function PayslipPage() {
   const [ovOpen, setOvOpen] = useState(false);
   const [ovAbsent, setOvAbsent] = useState("");
   const [ovLd, setOvLd] = useState("");
+  const [ovIncomeTax, setOvIncomeTax] = useState("");
+  const [ovNps, setOvNps] = useState("");
   const [ovReason, setOvReason] = useState("");
   const [ovSaving, setOvSaving] = useState(false);
   const [ovError, setOvError] = useState("");
@@ -473,6 +520,8 @@ export default function PayslipPage() {
     if (!payslip) return;
     setOvAbsent(String(payslip.absent_from_late ?? 0));
     setOvLd(String(payslip.ld ?? 0));
+    setOvIncomeTax(String(payslip.income_tax ?? 0));
+    setOvNps(String(payslip.nps ?? 0));
     setOvReason("");
     setOvError("");
     setOvOpen(true);
@@ -488,6 +537,12 @@ export default function PayslipPage() {
         emp_code: targetEmp, year: selYear, month: selMonth,
         absent_from_late: ovAbsent === "" ? undefined : Number(ovAbsent),
         ld: ovLd === "" ? undefined : Number(ovLd),
+        reason: ovReason.trim(),
+      });
+      await apiITNpsOverride({
+        emp_code: targetEmp, year: selYear, month: selMonth,
+        income_tax: ovIncomeTax === "" ? undefined : Number(ovIncomeTax),
+        nps: ovNps === "" ? undefined : Number(ovNps),
         reason: ovReason.trim(),
       });
       setOvOpen(false);
@@ -755,6 +810,18 @@ export default function PayslipPage() {
                 <label className="block">
                   <span className="text-xs font-semibold text-[#5A5A5A] mb-1.5 block">LD amount (₹)</span>
                   <input type="number" min="0" step="0.01" value={ovLd} onChange={(e) => setOvLd(e.target.value)}
+                    className="w-full bg-white border border-[#E2E2DF] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E5202E] focus:ring-1 focus:ring-[#E5202E]/30" />
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-semibold text-[#5A5A5A] mb-1.5 block">Income Tax (₹)</span>
+                  <input type="number" min="0" step="0.01" value={ovIncomeTax} onChange={(e) => setOvIncomeTax(e.target.value)}
+                    className="w-full bg-white border border-[#E2E2DF] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E5202E] focus:ring-1 focus:ring-[#E5202E]/30" />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-[#5A5A5A] mb-1.5 block">NPS (₹)</span>
+                  <input type="number" min="0" step="0.01" value={ovNps} onChange={(e) => setOvNps(e.target.value)}
                     className="w-full bg-white border border-[#E2E2DF] rounded-xl px-3 py-2.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E5202E] focus:ring-1 focus:ring-[#E5202E]/30" />
                 </label>
               </div>

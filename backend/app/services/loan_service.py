@@ -86,6 +86,30 @@ def create_loan(emp_code, loan_type, principal, emi, tenure_months, start_date,
     return loan
 
 
+def closing_balance_as_of(emp_code: str, year: int, month: int, db: Session) -> Decimal:
+    """Total loan outstanding for an employee at the END of payroll month (year, month).
+    Per loan: principal minus all APPLIED EMIs in periods up to and including this month;
+    summed across the employee's loans that had already started by then. Loans starting
+    later (or already fully paid) contribute 0. For the salary sheet's Loan Closing Balance.
+    """
+    target = _ord(year, month)
+    loans = db.query(Loan).filter(Loan.emp_code == emp_code).all()
+    total = ZERO
+    for loan in loans:
+        if _ord(loan.start_date.year, loan.start_date.month) > target:
+            continue  # loan starts after this month — not yet on the books
+        applied = (
+            db.query(LoanEmiSchedule)
+            .filter(LoanEmiSchedule.loan_id == loan.id, LoanEmiSchedule.applied == True)  # noqa: E712
+            .all()
+        )
+        paid = sum((_dec(r.actual_emi) for r in applied if _ord(r.year, r.month) <= target), ZERO)
+        bal = _dec(loan.principal) - paid
+        if bal > 0:
+            total += bal
+    return total
+
+
 def recompute_outstanding(loan_id: int, db: Session) -> Decimal:
     """Rebuild outstanding from the ledger (principal - applied). Closes at 0."""
     loan = db.get(Loan, loan_id)

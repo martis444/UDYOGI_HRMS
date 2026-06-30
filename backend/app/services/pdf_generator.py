@@ -101,21 +101,25 @@ def generate_bulk_pdf(contexts: list[dict]) -> bytes:
 def generate_salary_sheet_xlsx(context: dict) -> bytes:
     """Build the salary-sheet payroll register as an .xlsx workbook (bytes).
 
-    context: {entity_name, month_year, generated_on, rows:[...], totals:{...}}
-    Each row dict carries the prorated, paid-amount figures from _build_response.
+    Data-driven column spec (the salary-sheet endpoint supplies the master order):
+      context: {entity_name, month_year, generated_on, headers:[...],
+                text_keys:[...], num_keys:[...], rows:[{...}], totals:{...}}
+    headers = full header list incl the leading "#". Each data row is
+    [i] + [row[k] for k in text_keys] + [row[k] for k in num_keys]; the numeric block
+    starts right after the text columns. totals may be partial (only summed columns);
+    unsummed numeric columns are left blank in the TOTAL row.
     """
     import io as _io
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
 
-    headers = ["#", "Emp Code", "Name", "Designation", "Pay Days", "Basic", "HRA",
-               "SPL", "CCA", "LTA", "Other Earning", "Gross", "PF", "ESIC", "PT",
-               "LD", "Loan", "Other Ded", "Total Ded", "Net Pay", "PF (Empr)",
-               "ESIC (Empr)"]
-    # numeric data keys in column order, starting at the "Pay Days" column (E).
-    num_keys = ["pay_days", "basic", "hra", "spl", "cca", "lta", "other_earning",
-                "gross", "pf", "esic", "pt", "ld", "loan", "other_deduction",
-                "total_ded", "net", "pf_ern", "esic_ern"]
+    headers   = context["headers"]
+    text_keys = context["text_keys"]
+    num_keys  = context["num_keys"]
+    n_text    = len(text_keys)              # data text cols (after the "#" col)
+    first_num = 1 + n_text + 1              # 1-based col index of the first numeric column
+    last_col  = len(headers)
 
     wb = Workbook()
     ws = wb.active
@@ -141,30 +145,30 @@ def generate_salary_sheet_xlsx(context: dict) -> bytes:
         c.border = border
 
     for i, r in enumerate(context["rows"], start=1):
-        ws.append([i, r["emp_code"], r["name"], r.get("designation") or ""]
-                  + [r[k] for k in num_keys])
+        ws.append([i] + [r.get(k, "") for k in text_keys] + [r[k] for k in num_keys])
 
     t = context["totals"]
-    # pay_days isn't summed (blank); the rest are column totals.
-    total_row = ["", "", f"TOTAL — {len(context['rows'])} employees", "", ""]
-    total_row += [t[k] for k in num_keys[1:]]
+    # Label in the last text column; numeric cells filled only where a total exists.
+    total_lead = [""] * n_text
+    total_lead[-1] = f"TOTAL — {len(context['rows'])} employees"
+    total_row = [""] + total_lead + [t.get(k, "") for k in num_keys]
     ws.append(total_row)
 
-    # number format + borders for the numeric block (cols E..V) across data + total
+    # number format + borders for the numeric block across data + total rows
     first_data, last_row = header_row + 1, ws.max_row
-    for row in ws.iter_rows(min_row=first_data, max_row=last_row, min_col=5, max_col=22):
+    for row in ws.iter_rows(min_row=first_data, max_row=last_row, min_col=first_num, max_col=last_col):
         for c in row:
             if isinstance(c.value, (int, float)):
                 c.number_format = "#,##0"
-    for row in ws.iter_rows(min_row=header_row, max_row=last_row, min_col=1, max_col=22):
+    for row in ws.iter_rows(min_row=header_row, max_row=last_row, min_col=1, max_col=last_col):
         for c in row:
             c.border = border
     for c in ws[last_row]:
         c.font = Font(bold=True)
         c.fill = PatternFill("solid", fgColor="EFEFEF")
 
-    widths = [4, 12, 22, 18, 9] + [10] * 17
-    from openpyxl.utils import get_column_letter
+    # widths: # + text cols (wider) + numeric cols
+    widths = [4] + [12, 12, 22][:n_text] + [10] * (last_col - 1 - n_text)
     for idx, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(idx)].width = w
     ws.freeze_panes = ws.cell(row=header_row + 1, column=1)

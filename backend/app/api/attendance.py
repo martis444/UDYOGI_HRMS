@@ -251,10 +251,13 @@ def commit_attendance_import(
                     })
 
         # Optional per-month adjustments. None = blank cell → skip (rule 7); a number
-        # overwrites for this month. They survive reprocess (preserved in the engine);
-        # other_allowance adds to net, other_deduction subtracts (via total_deduction).
+        # overwrites for this month. They survive reprocess (preserved in the engine).
+        # other_allowance adds to net; other_deduction / income_tax / nps subtract
+        # (all via the GENERATED total_deduction).
         oa = row.get("other_allowance")
         od = row.get("other_deduction")
+        it = row.get("income_tax")
+        nps = row.get("nps")
 
         if existing:
             for field, val in att.items():
@@ -263,6 +266,10 @@ def commit_attendance_import(
                 existing.other_allowance = oa
             if od is not None:
                 existing.other_deduction = od
+            if it is not None:
+                existing.income_tax = it
+            if nps is not None:
+                existing.nps = nps
             if existing.status == "draft":
                 existing.status = "processed"
         else:
@@ -282,6 +289,7 @@ def commit_attendance_import(
                 spl             = data["spl"],
                 cca             = data["cca"],
                 leave_travel    = data["leave_travel"],
+                medical         = data["medical"],
                 other_allowance = oa if oa is not None else 0,
                 gross           = data["gross"],
                 pf_emp          = data["pf_emp"],
@@ -291,6 +299,8 @@ def commit_attendance_import(
                 pt              = data["pt"],
                 loan_emi        = data["loan_emi"],
                 other_deduction = od if od is not None else 0,
+                income_tax      = it if it is not None else 0,
+                nps             = nps if nps is not None else 0,
                 # total_deduction is a GENERATED ALWAYS column — PostgreSQL computes it
                 net_pay         = data["net_pay"],
                 status          = "processed",
@@ -514,7 +524,7 @@ def attendance_csv_template(
     # (The import resolves SAP Code → emp_code; rows without a SAP code fall back to
     # the system emp_code so no employee becomes unmappable.)
     header = ("SAP Code,Employee Name,Total Days,Pay Days,P,A,L,R,C,PL,S,H,LT,"
-              "Other Earning,Other Deduction,Remarks\n")
+              "Other Allowance,Other Deduction,Income Tax,NPS,Remarks\n")
 
     # Pre-mark APPROVED leaves for this period's 26→25 window (15.8). This template
     # is aggregate-count format (no per-day cells), so we pre-fill the C/PL/S COUNT
@@ -535,8 +545,8 @@ def attendance_csv_template(
         # so the row stays mappable on re-upload. (The parser resolves either.)
         ident = (sap_code or emp_code or "").replace(",", " ")
         # cols: 0 SAPCode 1 Name 2 TotalDays 3 PayDays 4 P 5 A 6 L 7 R 8 C 9 PL 10 S
-        #       11 H 12 LT 13 OtherEarning 14 OtherDed 15 Remarks
-        cols = [ident, safe_name, str(total_days)] + [""] * 13
+        #       11 H 12 LT 13 OtherAllowance 14 OtherDed 15 IncomeTax 16 NPS 17 Remarks
+        cols = [ident, safe_name, str(total_days)] + [""] * 15
         appr = approved.get(emp_code)
         if appr:
             if appr["CL"]: cols[8]  = str(len(appr["CL"]))
@@ -544,7 +554,7 @@ def attendance_csv_template(
             if appr["SL"]: cols[10] = str(len(appr["SL"]))
             notes = [f"{lt} {_fmt_dates(appr[lt])}" for lt in ("CL", "SL", "PL") if appr[lt]]
             if notes:
-                cols[15] = "APPROVED (do not edit): " + "; ".join(notes)
+                cols[17] = "APPROVED (do not edit): " + "; ".join(notes)
         buf.write(",".join(cols) + "\n")
 
     # Legend (blank SAP Code → parser skips these rows).
@@ -553,7 +563,8 @@ def attendance_csv_template(
     buf.write(",C/PL/S columns pre-filled with APPROVED leave days — do NOT reduce them; see Remarks for dates.\n")
     buf.write(",Fill P (present) / A (absent) / L (LWP) / R (weekly off) / H (holiday) / LT (late) for the rest.\n")
     buf.write(",SAP Code identifies the employee — do NOT edit it.\n")
-    buf.write(",Other Earning = one-off reward/extra pay (adds to net); Other Deduction = one-off penalty (cuts net). Blank = none.\n")
+    buf.write(",Other Allowance = one-off reward/extra pay (adds to net); Other Deduction = one-off penalty (cuts net). Blank = none.\n")
+    buf.write(",Income Tax / NPS = manual monthly deductions (cut net). Blank = none.\n")
 
     filename = f"attendance_template_{year}_{month:02d}_{entity_id}.csv"
     return StreamingResponse(

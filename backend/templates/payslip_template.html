@@ -154,8 +154,22 @@
       {% endif %}
     </tr>
 
-    <!-- Row 6: OTHER EARNING (if > 0) | OTHER DED (if > 0) — Other Earning = fixed + per-month reward -->
-    {% if other_earning or other_deduction %}
+    <!-- Row 6: MEDICAL (always — paid earning in gross) | MISCELLANEOUS DED (if > 0) -->
+    <tr>
+      <td></td>
+      <td>MEDICAL</td>
+      <td class="amt">{{ medical_rate }}</td>
+      <td class="amt">{{ medical_amount }}</td>
+      {% if other_deduction %}
+      <td>MISCELLANEOUS</td>
+      <td class="amt">{{ other_deduction }}</td>
+      {% else %}
+      <td></td><td></td>
+      {% endif %}
+    </tr>
+
+    <!-- Row 7: OTHER EARNING (if > 0) | INCOME TAX (if > 0) -->
+    {% if other_earning or income_tax %}
     <tr>
       <td></td>
       {% if other_earning %}
@@ -165,9 +179,29 @@
       {% else %}
       <td></td><td></td><td></td>
       {% endif %}
-      {% if other_deduction %}
-      <td>OTHER DED</td>
-      <td class="amt">{{ other_deduction }}</td>
+      {% if income_tax %}
+      <td>INCOME TAX</td>
+      <td class="amt">{{ income_tax }}</td>
+      {% else %}
+      <td></td><td></td>
+      {% endif %}
+    </tr>
+    {% endif %}
+
+    <!-- Row 8: OTHER ALLOW (if > 0) | NATIONAL PENSION / NPS (if > 0) -->
+    {% if other_allowance or nps %}
+    <tr>
+      <td></td>
+      {% if other_allowance %}
+      <td>OTHER ALLOW</td>
+      <td class="amt"></td>
+      <td class="amt">{{ other_allowance }}</td>
+      {% else %}
+      <td></td><td></td><td></td>
+      {% endif %}
+      {% if nps %}
+      <td>NATIONAL PENSION</td>
+      <td class="amt">{{ nps }}</td>
       {% else %}
       <td></td><td></td>
       {% endif %}

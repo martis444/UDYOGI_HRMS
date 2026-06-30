@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Wi2t8ggu3tmUoqc9f0IdlaZw04gkHcYpAxgQ787J7BpUPcBvc6WThQWZy4A6Q4S
+\restrict MFXlNDhdYb8RoSCojzooYQvshm22B68SNLnP8RyMoyxpbtShFbYaA6CmGILYMu3
 
 -- Dumped from database version 18.4
 -- Dumped by pg_dump version 18.4
@@ -860,7 +860,7 @@ CREATE TABLE public.payroll_months (
     ld numeric(10,2) DEFAULT 0 NOT NULL,
     ld_overridden boolean DEFAULT false NOT NULL,
     late_absent_overridden boolean DEFAULT false NOT NULL,
-    total_deduction numeric(10,2) GENERATED ALWAYS AS ((((((pf_emp + esic_emp) + pt) + loan_emi) + other_deduction) + ld)) STORED,
+    total_deduction numeric(10,2) GENERATED ALWAYS AS ((((((((pf_emp + esic_emp) + pt) + loan_emi) + other_deduction) + ld) + income_tax) + nps)) STORED,
     CONSTRAINT payroll_months_month_check CHECK (((month >= 1) AND (month <= 12))),
     CONSTRAINT payroll_months_status_check CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'processed'::character varying, 'locked'::character varying])::text[])))
 );
@@ -1119,6 +1119,7 @@ CREATE VIEW public.v_payslip_summary AS
     pm.hra,
     pm.spl,
     pm.cca,
+    pm.medical,
     pm.gross,
     pm.pf_emp,
     pm.pf_ern,
@@ -1128,6 +1129,8 @@ CREATE VIEW public.v_payslip_summary AS
     pm.loan_emi,
     pm.other_deduction,
     pm.ld,
+    pm.income_tax,
+    pm.nps,
     pm.total_deduction,
     pm.net_pay,
     pm.total_days,
@@ -2095,5 +2098,5 @@ ALTER TABLE ONLY public.users
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Wi2t8ggu3tmUoqc9f0IdlaZw04gkHcYpAxgQ787J7BpUPcBvc6WThQWZy4A6Q4S
+\unrestrict MFXlNDhdYb8RoSCojzooYQvshm22B68SNLnP8RyMoyxpbtShFbYaA6CmGILYMu3
 

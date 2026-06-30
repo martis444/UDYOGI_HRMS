@@ -19,7 +19,7 @@ from app.services.pdf_generator import (
     generate_pdf, generate_bulk_pdf, generate_salary_sheet_xlsx, num_to_words,
 )
 from app.services.salary_resolver import get_structure_for_period
-from app.services import email_service
+from app.services import email_service, loan_service
 
 router = APIRouter()
 # Mounted at /api/payroll in main.py — payroll operations console (status/lock/unlock).
@@ -105,20 +105,22 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
     spl_r   = float(pm.spl or 0)
     cca_r   = float(pm.cca or 0)
     lt_r    = float(pm.leave_travel or 0)
-    oa      = round(float(pm.other_allowance or 0))   # per-month one-off reward (full value)
-    oe      = round(float(pm.other_earning or 0))      # fixed monthly Other Earning (full value)
-    # Merged "Other Earning" line = fixed component + per-month reward. Both paid,
-    # both non-statutory (outside the PF/ESIC/PT base).
-    other_earning_total = oe + oa
+    med_r   = float(pm.medical or 0)                  # paid earning, in gross — prorates like basic
+    oa      = round(float(pm.other_allowance or 0))   # OTHER ALLOW: per-month value (full value)
+    oe      = round(float(pm.other_earning or 0))     # OTHER EARNING: fixed monthly component (full value)
+    # Un-merged (Session 22): OTHER EARNING and OTHER ALLOW are two SEPARATE paid
+    # lines, both non-statutory (outside the PF/ESIC/PT base).
 
     basic_amt = round(basic_r * factor)
     hra_amt   = round(hra_r   * factor)
     spl_amt   = round(spl_r   * factor)
     cca_amt   = round(cca_r   * factor)
     lt_amt    = round(lt_r    * factor)
+    med_amt   = round(med_r   * factor)
 
-    gross_rate     = int(basic_r + hra_r + spl_r + cca_r + lt_r)
-    total_earnings = basic_amt + hra_amt + spl_amt + cca_amt + lt_amt + other_earning_total
+    # Medical is in the statutory gross (Session 22) → prorates with basic/hra/etc.
+    gross_rate     = int(basic_r + hra_r + spl_r + cca_r + lt_r + med_r)
+    total_earnings = basic_amt + hra_amt + spl_amt + cca_amt + lt_amt + med_amt + oe + oa
 
     pf_val   = int(float(pm.pf_emp or 0))
     esic_val = int(float(pm.esic_emp or 0))
@@ -126,7 +128,9 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
     loan_val = int(float(pm.loan_emi or 0))
     ld_val   = int(round(float(pm.ld or 0)))   # Late Deduction (15.4)
     oth_ded  = int(float(pm.other_deduction or 0))
-    total_ded      = pf_val + esic_val + pt_val + loan_val + ld_val + oth_ded
+    it_val   = int(round(float(pm.income_tax or 0)))   # Income Tax (manual, Session 22)
+    nps_val  = int(round(float(pm.nps or 0)))          # NPS (manual, Session 22)
+    total_ded      = pf_val + esic_val + pt_val + loan_val + ld_val + oth_ded + it_val + nps_val
     net_pay_display = total_earnings - total_ded
 
     return {
@@ -143,8 +147,9 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         "spl":             spl_r,
         "cca":             cca_r,
         "leave_travel":    lt_r,
-        "other_allowance": oa,
-        "other_earning":   other_earning_total,   # merged Other Earning (fixed + reward), paid
+        "medical":         med_r,                  # paid earning, in gross
+        "other_allowance": oa,                     # OTHER ALLOW (per-month), paid, non-statutory
+        "other_earning":   oe,                     # OTHER EARNING (fixed), paid, non-statutory
         "gross":           gross_rate,
         # prorated earning rate/amount pairs (for payslip table)
         "basic_rate":     int(basic_r),
@@ -157,6 +162,8 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         "cca_amount":     cca_amt,
         "lt_rate":        int(lt_r),
         "lt_amount":      lt_amt,
+        "medical_rate":   int(med_r),
+        "medical_amount": med_amt,
         "gross_rate":     gross_rate,
         "total_earnings": total_earnings,
         # deductions (never prorated)
@@ -168,6 +175,8 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         "loan_emi":        loan_val,
         "ld":              ld_val,   # Late Deduction (15.4)
         "other_deduction": oth_ded,
+        "income_tax":      it_val,   # Income Tax (manual, Session 22)
+        "nps":             nps_val,  # NPS (manual, Session 22)
         "total_deduction": total_ded,
         "net_pay":         net_pay_display,
         # attendance
@@ -187,6 +196,7 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         "status":     pm.status,
         # employee / entity info
         "name":            emp.name if emp else "",
+        "sap_code":        emp.sap_code if emp else None,
         "designation":     emp.designation if emp else None,
         "department":      dept.name if dept else None,
         "entity_id":       emp.entity_id if emp else None,
@@ -351,36 +361,63 @@ def get_salary_sheet_pdf(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("super_admin", "entity_admin")),
 ):
-    """A3-landscape payroll register for an entity/month (all employees in rows)."""
+    """A3-landscape payroll register for an entity/month (all employees in rows).
+    Column order matches the client's master salary-sheet format (Session 22)."""
     _assert_entity_admin_scope(db, current_user, entity_id)
     contexts = _contexts_for_month(db, current_user, entity_id, year, month)
 
-    _keys = ("basic", "hra", "spl", "cca", "lta", "other_earning", "gross",
-             "pf", "esic", "pt", "ld", "loan", "other_deduction", "total_ded",
-             "net", "pf_ern", "esic_ern")
-    totals = {k: 0 for k in _keys}
+    # Master column order: identity + attendance counts, then earnings, then deductions.
+    text_keys = ("emp_code", "sap_id", "name")
+    headers = [
+        "#", "Emp Code", "SAP ID", "Employee Name",
+        "Total Pay Days", "PR", "ABS", "WO", "CL", "HO", "Loan Closing Bal",
+        "Basic", "HRA", "Medical", "Special", "Other Earning", "CCA", "LTA", "Other Allow",
+        "Earn Total",
+        "PF", "ESIC", "Prof Tax", "Loan", "Income Tax", "Miscellaneous", "NPS",
+        "Deduct Total", "Net Total",
+    ]
+    num_keys = [
+        "pay_days", "pr", "abs", "wo", "cl", "ho", "loan_closing",
+        "basic", "hra", "medical", "special", "other_earning", "cca", "lta", "other_allow",
+        "earn_total",
+        "pf", "esic", "pt", "loan", "income_tax", "misc", "nps",
+        "deduct_total", "net",
+    ]
+    # Columns that get a meaningful column TOTAL (money); attendance counts / pay_days
+    # are left blank in the total row.
+    sum_keys = {"loan_closing", "basic", "hra", "medical", "special", "other_earning",
+                "cca", "lta", "other_allow", "earn_total", "pf", "esic", "pt", "loan",
+                "income_tax", "misc", "nps", "deduct_total", "net"}
+
+    totals = {k: 0 for k in sum_keys}
     rows = []
     for c in contexts:
+        loan_closing = float(loan_service.closing_balance_as_of(c["emp_code"], year, month, db))
         row = {
-            "emp_code": c["emp_code"], "name": c["name"], "designation": c["designation"],
+            "emp_code": c["emp_code"], "sap_id": c.get("sap_code") or "", "name": c["name"],
             "pay_days": c["pay_days"] if c["pay_days"] is not None else c["total_days"],
-            "basic": c["basic_amount"], "hra": c["hra_amount"], "spl": c["spl_amount"],
-            "cca": c["cca_amount"], "lta": c["lt_amount"],
-            "other_earning": c["other_earning"], "gross": c["total_earnings"],
-            "pf": c["pf_emp"], "esic": c["esic_emp"], "pt": c["pt"], "ld": c["ld"],
-            "loan": c["loan_emi"], "other_deduction": c["other_deduction"],
-            "total_ded": c["total_deduction"], "net": c["net_pay"],
-            "pf_ern": c["pf_ern"], "esic_ern": c["esic_ern"],
+            "pr": c["days_p"] or 0, "abs": c["days_a"] or 0, "wo": c["days_wo"] or 0,
+            "cl": c["days_cl"] or 0, "ho": c["days_h"] or 0, "loan_closing": loan_closing,
+            "basic": c["basic_amount"], "hra": c["hra_amount"], "medical": c["medical_amount"],
+            "special": c["spl_amount"], "other_earning": c["other_earning"], "cca": c["cca_amount"],
+            "lta": c["lt_amount"], "other_allow": c["other_allowance"], "earn_total": c["total_earnings"],
+            "pf": c["pf_emp"], "esic": c["esic_emp"], "pt": c["pt"], "loan": c["loan_emi"],
+            # Master format has no LD column — fold Late Deduction into Miscellaneous so
+            # the deduction columns reconcile to Deduct Total (both are ad-hoc penalties).
+            "income_tax": c["income_tax"], "misc": c["other_deduction"] + c["ld"], "nps": c["nps"],
+            "deduct_total": c["total_deduction"], "net": c["net_pay"],
         }
         rows.append(row)
-        for k in _keys:
+        for k in sum_keys:
             totals[k] += row[k]
 
     first = contexts[0]
     context = {
         "entity_name":   first["entity_name"],
-        "location_city": None,   # a sheet can span locations
         "month_year":    f"{_MONTH_NAMES.get(month, '').upper()} - {year}",
+        "headers":       headers,
+        "text_keys":     list(text_keys),
+        "num_keys":      num_keys,
         "rows":          rows,
         "totals":        totals,
         "generated_on":  datetime.now(timezone.utc).strftime("%d-%b-%Y %H:%M UTC"),
@@ -815,4 +852,84 @@ def late_override(
         "ld": float(pm.ld or 0),
         "ld_overridden": bool(pm.ld_overridden),
         "late_absent_overridden": bool(pm.late_absent_overridden),
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /it-nps-override — admin edit of Income Tax / NPS before lock (Session 22)
+# ---------------------------------------------------------------------------
+
+class ITNpsOverrideBody(BaseModel):
+    emp_code:   str
+    year:       int
+    month:      int
+    income_tax: Optional[float] = None
+    nps:        Optional[float] = None
+    reason:     str
+
+
+@payroll_router.post("/it-nps-override")
+def it_nps_override(
+    body: ITNpsOverrideBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin", "entity_admin")),
+):
+    """Set the manual Income Tax and/or NPS deduction for an UNLOCKED month. The values
+    are preserved across reprocess (engine) and feed the GENERATED total_deduction, so
+    net pay recomputes. Locked → 400. Mirrors /late-override."""
+    if body.income_tax is None and body.nps is None:
+        raise HTTPException(status_code=400, detail="Provide income_tax and/or nps to set")
+    if not body.reason or len(body.reason.strip()) < 4:
+        raise HTTPException(status_code=400, detail="A reason of at least 4 characters is required")
+    if (body.income_tax is not None and body.income_tax < 0) or (body.nps is not None and body.nps < 0):
+        raise HTTPException(status_code=400, detail="Amounts cannot be negative")
+
+    scope = _my_entity(db, current_user)
+    emp_entity = db.query(Employee.entity_id).filter(Employee.emp_code == body.emp_code).scalar()
+    if emp_entity is None:
+        raise HTTPException(status_code=404, detail=f"Employee {body.emp_code} not found")
+    if scope is not None and emp_entity != scope:
+        raise HTTPException(status_code=403, detail="Access denied for this entity")
+
+    pm = (
+        db.query(PayrollMonth)
+        .filter(PayrollMonth.emp_code == body.emp_code,
+                PayrollMonth.year == body.year, PayrollMonth.month == body.month)
+        .first()
+    )
+    if pm and pm.status == "locked":
+        raise HTTPException(status_code=400, detail="Month is locked — overrides are not allowed")
+
+    if pm is None:
+        pm = process_payroll_month(body.emp_code, body.year, body.month, db, generated_by=current_user.emp_code)
+
+    old = {"income_tax": float(pm.income_tax or 0), "nps": float(pm.nps or 0)}
+
+    if body.income_tax is not None:
+        pm.income_tax = body.income_tax
+    if body.nps is not None:
+        pm.nps = body.nps
+    db.commit()
+
+    # Reprocess preserves the new income_tax/nps (engine) and recomputes net.
+    pm = process_payroll_month(body.emp_code, body.year, body.month, db, generated_by=current_user.emp_code)
+
+    db.add(AuditLog(
+        user_code  = current_user.emp_code,
+        action     = "IT_NPS_OVERRIDE",
+        table_name = "payroll_months",
+        record_id  = f"{body.emp_code}-{body.year}-{body.month}",
+        old_values = old,
+        new_values = {
+            "income_tax": float(pm.income_tax or 0),
+            "nps":        float(pm.nps or 0),
+            "reason":     body.reason.strip(),
+        },
+    ))
+    db.commit()
+    return {
+        "emp_code": body.emp_code, "year": body.year, "month": body.month,
+        "income_tax": float(pm.income_tax or 0),
+        "nps":        float(pm.nps or 0),
+        "net_pay":    float(pm.net_pay or 0),
     }
