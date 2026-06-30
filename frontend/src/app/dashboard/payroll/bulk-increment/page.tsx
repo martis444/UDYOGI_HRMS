@@ -31,7 +31,7 @@ const MODES: [string, string][] = [
   ["abs_spl", "Set SPL to value"],
   ["abs_cca", "Set CCA to value"],
   ["abs_lta", "Set LTA (leave_travel) to value"],
-  ["abs_other", "Set Other Earning to value"],
+  ["abs_other", "Set Other Allowance to value"],
 ];
 
 const money = (n: number) =>

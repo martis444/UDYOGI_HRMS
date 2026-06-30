@@ -275,7 +275,7 @@ function PayslipDocument({ data }: { data: PayslipData }) {
                 <td style={tdStyle}></td>
                 {data.other_earning > 0 ? (
                   <>
-                    <td style={tdStyle}>OTHER EARNING</td>
+                    <td style={tdStyle}>OTHER ALLOWANCE</td>
                     <td style={{ ...tdStyle, ...amtStyle }}></td>
                     <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.other_earning)}</td>
                   </>
@@ -299,7 +299,7 @@ function PayslipDocument({ data }: { data: PayslipData }) {
                 <td style={tdStyle}></td>
                 {data.other_allowance > 0 ? (
                   <>
-                    <td style={tdStyle}>OTHER ALLOW</td>
+                    <td style={tdStyle}>OTHER EARNING</td>
                     <td style={{ ...tdStyle, ...amtStyle }}></td>
                     <td style={{ ...tdStyle, ...amtStyle }}>{fmt(data.other_allowance)}</td>
                   </>

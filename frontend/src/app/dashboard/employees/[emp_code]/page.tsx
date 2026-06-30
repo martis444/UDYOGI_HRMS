@@ -378,7 +378,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
             <SectionTitle>Salary</SectionTitle>
             <div className="p-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
               {(["basic", "hra", "spl", "cca", "leave_travel", "ctc_annual", "medical", "other_earning"] as (keyof Emp)[]).map((f) => (
-                <InfoRow key={f} label={f === "leave_travel" ? "LTA" : f === "other_earning" ? "Other earning" : f.toUpperCase().replace("_", " ")} value={emp[f] ? `₹${parseFloat(String(emp[f])).toLocaleString("en-IN")}` : undefined} />
+                <InfoRow key={f} label={f === "leave_travel" ? "LTA" : f === "other_earning" ? "Other allowance" : f.toUpperCase().replace("_", " ")} value={emp[f] ? `₹${parseFloat(String(emp[f])).toLocaleString("en-IN")}` : undefined} />
               ))}
             </div>
           </GlassCard>
@@ -557,7 +557,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ emp_c
               </EditField>
               {([
                 { key: "medical" as const, label: "Medical" },
-                { key: "other_earning" as const, label: "Other earning (paid)" },
+                { key: "other_earning" as const, label: "Other allowance (paid)" },
               ]).map(({ key, label }) => (
                 <EditField key={key} label={label}>
                   <div className="relative">

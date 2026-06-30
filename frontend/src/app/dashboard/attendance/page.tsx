@@ -723,8 +723,8 @@ export default function AttendancePage() {
                   Fill in attendance columns, then upload below. Already have your own file? Skip straight to Step 2.
                 </p>
                 <p className="text-xs text-[#5A5A5A] mb-3">
-                  Optional <span className="font-semibold">Other Allowance</span> / <span className="font-semibold">Other Deduction</span> columns
-                  let you add a one-off reward or penalty for that month (allowance adds to net, deduction cuts it). Leave blank for none.
+                  Optional <span className="font-semibold">Other Earning</span> / <span className="font-semibold">Other Deduction</span> columns
+                  let you add a one-off reward or penalty for that month (earning adds to net, deduction cuts it). Leave blank for none.
                 </p>
                 <button
                   onClick={handleTemplateDownload}

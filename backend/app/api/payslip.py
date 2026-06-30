@@ -373,7 +373,7 @@ def get_salary_sheet_pdf(
     headers = [
         "#", "SAP Code", "Employee Name",
         "Total Pay Days", "PR", "ABS", "WO", "CL", "HO", "Loan Closing Bal",
-        "Basic", "HRA", "Medical", "Special", "Other Earning", "CCA", "LTA", "Other Allow",
+        "Basic", "HRA", "Medical", "Special", "Other Allowance", "CCA", "LTA", "Other Earning",
         "Earn Total",
         "PF", "ESIC", "Prof Tax", "Loan", "Income Tax", "Miscellaneous", "NPS",
         "Deduct Total", "Net Total",

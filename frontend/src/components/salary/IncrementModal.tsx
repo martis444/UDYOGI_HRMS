@@ -13,7 +13,7 @@ const INC_COMPONENTS = [
   { key: "spl", label: "SPL" },
   { key: "cca", label: "CCA" },
   { key: "leave_travel", label: "LTA" },
-  { key: "other_earning", label: "Other earning" },
+  { key: "other_earning", label: "Other allowance" },
 ] as const;
 
 type IncKey = (typeof INC_COMPONENTS)[number]["key"];

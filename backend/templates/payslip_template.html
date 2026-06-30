@@ -168,12 +168,12 @@
       {% endif %}
     </tr>
 
-    <!-- Row 7: OTHER EARNING (if > 0) | INCOME TAX (if > 0) -->
+    <!-- Row 7: OTHER ALLOWANCE (data field other_earning, if > 0) | INCOME TAX (if > 0) -->
     {% if other_earning or income_tax %}
     <tr>
       <td></td>
       {% if other_earning %}
-      <td>OTHER EARNING</td>
+      <td>OTHER ALLOWANCE</td>
       <td class="amt"></td>
       <td class="amt">{{ other_earning }}</td>
       {% else %}
@@ -188,12 +188,12 @@
     </tr>
     {% endif %}
 
-    <!-- Row 8: OTHER ALLOW (if > 0) | NATIONAL PENSION / NPS (if > 0) -->
+    <!-- Row 8: OTHER EARNING (data field other_allowance, if > 0) | NATIONAL PENSION / NPS (if > 0) -->
     {% if other_allowance or nps %}
     <tr>
       <td></td>
       {% if other_allowance %}
-      <td>OTHER ALLOW</td>
+      <td>OTHER EARNING</td>
       <td class="amt"></td>
       <td class="amt">{{ other_allowance }}</td>
       {% else %}

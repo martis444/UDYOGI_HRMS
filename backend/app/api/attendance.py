@@ -524,7 +524,7 @@ def attendance_csv_template(
     # (The import resolves SAP Code → emp_code; rows without a SAP code fall back to
     # the system emp_code so no employee becomes unmappable.)
     header = ("SAP Code,Employee Name,Total Days,Pay Days,P,A,L,R,C,PL,S,H,LT,"
-              "Other Allowance,Other Deduction,Income Tax,NPS,Remarks\n")
+              "Other Earning,Other Deduction,Income Tax,NPS,Remarks\n")
 
     # Pre-mark APPROVED leaves for this period's 26→25 window (15.8). This template
     # is aggregate-count format (no per-day cells), so we pre-fill the C/PL/S COUNT
@@ -563,7 +563,7 @@ def attendance_csv_template(
     buf.write(",C/PL/S columns pre-filled with APPROVED leave days — do NOT reduce them; see Remarks for dates.\n")
     buf.write(",Fill P (present) / A (absent) / L (LWP) / R (weekly off) / H (holiday) / LT (late) for the rest.\n")
     buf.write(",SAP Code identifies the employee — do NOT edit it.\n")
-    buf.write(",Other Allowance = one-off reward/extra pay (adds to net); Other Deduction = one-off penalty (cuts net). Blank = none.\n")
+    buf.write(",Other Earning = one-off reward/extra pay (adds to net); Other Deduction = one-off penalty (cuts net). Blank = none.\n")
     buf.write(",Income Tax / NPS = manual monthly deductions (cut net). Blank = none.\n")
 
     filename = f"attendance_template_{year}_{month:02d}_{entity_id}.csv"

@@ -138,8 +138,8 @@ _COL_MAP: dict[str, str] = {
     "medical": "medical",
     "medical allowance": "medical",
     "medical_allowance": "medical",
-    # other_earning (paid, non-statutory). The legacy "other allowance" salary
-    # column is merged into Other Earning, so it maps here too.
+    # The fixed monthly component is stored in other_earning; it is DISPLAYED as
+    # "Other Allowance" (terminology swap). Accept every "other *" spelling → other_earning.
     "other earning": "other_earning",
     "other earnings": "other_earning",
     "other_earning": "other_earning",
@@ -945,10 +945,11 @@ async def parse_attendance_csv(file: UploadFile, db: Session) -> list[dict]:
     Header format:
         SAP Code, Employee Name, Total Days, Pay Days,
         P, A, L, R, C, PL, S, H, LT,
-        Other Allowance, Other Deduction, Remarks
+        Other Earning, Other Deduction, Income Tax, NPS, Remarks
 
-    - Other Allowance / Other Deduction are optional per-month adjustments (a
+    - Other Earning / Other Deduction are optional per-month adjustments (a
       reward / a penalty). Blank = no change; a number overwrites for that month.
+      (Stored in payroll_months.other_allowance — the per-month bucket.)
 
     - SAP Code is the identity column (the employee's SAP code), resolved to the
       database emp_code via a sap_code lookup. Falls back to "Emp Code"/"HRMS Code"
@@ -1023,11 +1024,11 @@ async def parse_attendance_csv(file: UploadFile, db: Session) -> list[dict]:
             "remarks": str(raw.get("Remarks", "")).strip() or None,
             # Per-month ad-hoc adjustments (optional). None when the cell is blank
             # so the commit can SKIP it (rule 7) instead of overwriting with 0.
-            # "Other Allowance" is the OTHER ALLOW per-month bucket (un-merged,
-            # Session 22) → payroll_months.other_allowance; still accept the legacy
-            # "Other Earning"/"Other Allow" headers from older files.
+            # The per-month bucket is now LABELLED "Other Earning" (terminology swap) and
+            # still stored in payroll_months.other_allowance; accept the old "Other
+            # Allowance"/"Other Allow" headers from earlier files too.
             "other_allowance": _opt_amount(
-                raw.get("Other Allowance", raw.get("Other Earning", raw.get("Other Allow", "")))
+                raw.get("Other Earning", raw.get("Other Allowance", raw.get("Other Allow", "")))
             ),
             "other_deduction": _opt_amount(raw.get("Other Deduction", raw.get("Other Ded", ""))),
             # Manual per-month deductions (Session 22) → payroll_months.income_tax / nps.

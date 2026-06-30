@@ -402,7 +402,7 @@ export default function AddEmployeePage() {
                 <input type="number" min="0" step="0.01" value={form.medical} onChange={(e) => set("medical", e.target.value)} placeholder="0.00" className={`${INPUT} pl-7`} />
               </div>
             </Field>
-            <Field label="Other earning" hint="Paid — added to net, outside PF/ESIC/PT base">
+            <Field label="Other allowance" hint="Paid — added to net; in the ESIC/PT base, outside PF">
               <div className="relative">
                 <IndianRupee size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6B6B]" />
                 <input type="number" min="0" step="0.01" value={form.other_earning} onChange={(e) => set("other_earning", e.target.value)} placeholder="0.00" className={`${INPUT} pl-7`} />

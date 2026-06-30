@@ -59,17 +59,19 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
     # these total wages. Always rounds UP (in favour of the fund). esic_applicable lets
     # HR opt an employee out entirely. (process_payroll_month re-evaluates this on the
     # final per-month other_allowance + the paid amount.)
-    esic_wages = gross + other_earning + other_allowance
-    if emp.esic_applicable is not False and esic_wages <= 21000:
-        esic_emp = math.ceil(esic_wages * 0.0075)
-        esic_ern = math.ceil(esic_wages * 0.0325)
+    # total_wages = all earnings, the base for both ESIC and PT.
+    total_wages = gross + other_earning + other_allowance
+    if emp.esic_applicable is not False and total_wages <= 21000:
+        esic_emp = math.ceil(total_wages * 0.0075)
+        esic_ern = math.ceil(total_wages * 0.0325)
     else:
         esic_emp = 0
         esic_ern = 0
 
+    # PT slab is resolved on the SAME total wages (gross + Other Earning + Other Allowance).
     pt = 0.0
     if emp.pt_applicable:
-        pt = get_pt_amount(gross, pt_state, emp.gender or "all", month, db)
+        pt = get_pt_amount(total_wages, pt_state, emp.gender or "all", month, db)
 
     loan_emi        = 0
     other_deduction = 0
@@ -277,20 +279,20 @@ def process_payroll_month(
     # the 0.75%/3.25% contribution is on the PAID total wages. Re-evaluated here (not the
     # compute-run base) so the per-month Other Allowance counts toward both. esic_applicable
     # lets HR opt out. No gross_paid>0 guard — a fully-absent month → base 0 → ESIC 0.
-    other_extra   = float(data["other_earning"] or 0) + float(data["other_allowance"] or 0)
+    other_extra     = float(data["other_earning"] or 0) + float(data["other_allowance"] or 0)
     committed_wages = float(data["gross"]) + other_extra
-    esic_base       = gross_paid + other_extra
+    wages_paid      = gross_paid + other_extra
     if (data.get("esic_applicable") is not False) and committed_wages <= 21000:
-        data["esic_emp"] = math.ceil(esic_base * 0.0075)
-        data["esic_ern"] = math.ceil(esic_base * 0.0325)
+        data["esic_emp"] = math.ceil(wages_paid * 0.0075)
+        data["esic_ern"] = math.ceil(wages_paid * 0.0325)
     else:
         data["esic_emp"] = 0
         data["esic_ern"] = 0
-    # PT is re-resolved on the PAID gross slab (not the committed gross): an absent
-    # employee whose earnings fall into a lower band pays that band's PT, or ₹0 below
-    # the threshold. Full-attendance months are unchanged (gross_paid == committed gross).
+    # PT slab re-resolved on the PAID total wages (same base as ESIC): an absent employee
+    # whose earnings fall into a lower band pays that band's PT, or ₹0 below the threshold.
+    # Full-attendance months are unchanged (wages_paid == committed total wages).
     if data.get("pt_applicable"):
-        data["pt"] = get_pt_amount(gross_paid, data["pt_state"], data["gender"] or "all", month, db)
+        data["pt"] = get_pt_amount(wages_paid, data["pt_state"], data["gender"] or "all", month, db)
     data["total_deduction"] = (
         data["pf_emp"] + data["esic_emp"] + int(data["pt"])
         + data["loan_emi"] + data["other_deduction"] + data["ld"]
