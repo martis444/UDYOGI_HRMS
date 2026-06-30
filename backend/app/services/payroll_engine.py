@@ -112,6 +112,7 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
         "location_id": emp.location_id,
         "gender":      emp.gender,
         "pt_state":    pt_state,
+        "pt_applicable": emp.pt_applicable,
     }
 
 
@@ -259,21 +260,29 @@ def process_payroll_month(
     pay_days = int(existing.pay_days) if csv_authoritative else max(0, divisor - lop_days)
     payable_factor = Decimal(pay_days) / Decimal(divisor)
 
-    # PF/ESIC are charged on the EARNED (paid) amount, not the full committed amount:
-    # when LOP reduces pay, the contributions reduce proportionally (the /30 factor
+    # PF/ESIC/PT are all charged on the EARNED (paid) amount, not the full committed
+    # amount: when LOP reduces pay, the deductions reduce with it (the /30 factor
     # carries the unpaid days). Caps (PF ₹1,800/₹2,340) and ESIC eligibility (on the
-    # committed gross ≤ ₹21,000) are unchanged. PT stays on the committed-gross slab.
+    # committed gross ≤ ₹21,000) are unchanged. PT slab is re-resolved on the paid gross.
     f          = float(payable_factor)
     basic_paid = float(data["basic"]) * f
     gross_paid = float(data["gross"]) * f
     if data["pf_emp"] or data["pf_ern"]:               # PF applicable
         data["pf_emp"] = min(round(basic_paid * 0.12), 1800)
         data["pf_ern"] = min(round(basic_paid * 0.13), 2340)
-    # Mirror PF: only reprorate ESIC if the base run already charged it — that
-    # already encodes esic_applicable AND the committed-gross ≤ ₹21,000 ceiling.
-    if (data["esic_emp"] or data["esic_ern"]) and gross_paid > 0:
+    # Mirror PF: reprorate ESIC whenever the base run charged it (which already encodes
+    # esic_applicable AND the committed-gross ≤ ₹21,000 ceiling). No `gross_paid > 0`
+    # guard — a fully-absent month has gross_paid = 0, so ESIC must reprorate to
+    # ceil(0) = 0 (matching PF). The old guard skipped the zeroing and left a full-month
+    # ESIC on employees who earned nothing.
+    if data["esic_emp"] or data["esic_ern"]:
         data["esic_emp"] = math.ceil(gross_paid * 0.0075)
         data["esic_ern"] = math.ceil(gross_paid * 0.0325)
+    # PT is re-resolved on the PAID gross slab (not the committed gross): an absent
+    # employee whose earnings fall into a lower band pays that band's PT, or ₹0 below
+    # the threshold. Full-attendance months are unchanged (gross_paid == committed gross).
+    if data.get("pt_applicable"):
+        data["pt"] = get_pt_amount(gross_paid, data["pt_state"], data["gender"] or "all", month, db)
     data["total_deduction"] = (
         data["pf_emp"] + data["esic_emp"] + int(data["pt"])
         + data["loan_emi"] + data["other_deduction"] + data["ld"]
