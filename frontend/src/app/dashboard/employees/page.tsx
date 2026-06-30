@@ -71,6 +71,7 @@ const TABLE_COLS = [
 
 export default function EmployeesPage() {
   const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
   const { selected: entityFilter } = useEntityStore();
 
   const [deleteTarget, setDeleteTarget] = useState<EmpItem | null>(null);
@@ -136,8 +137,8 @@ export default function EmployeesPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await apiDeleteEmployee(deleteTarget.emp_code);
-      setToast({ kind: "ok", msg: `${deleteTarget.name} deactivated` });
+      await apiDeleteEmployee(deleteTarget.emp_code, isSuperAdmin);
+      setToast({ kind: "ok", msg: `${deleteTarget.name} ${isSuperAdmin ? "permanently deleted" : "deactivated"}` });
       setDeleteTarget(null);
       fetchEmployees();
     } catch (err: unknown) {
@@ -348,10 +349,10 @@ export default function EmployeesPage() {
                           >
                             View →
                           </Link>
-                          {isAdmin && emp.status !== "inactive" && (
+                          {isAdmin && (isSuperAdmin || emp.status !== "inactive") && (
                             <button
                               onClick={() => setDeleteTarget(emp)}
-                              title="Delete (deactivate) employee"
+                              title={isSuperAdmin ? "Delete employee permanently" : "Delete (deactivate) employee"}
                               aria-label={`Delete ${emp.name}`}
                               className="text-[#6B6B6B] hover:text-[#DC2626] transition p-1 rounded-lg hover:bg-[#DC2626]/8"
                             >
@@ -402,19 +403,27 @@ export default function EmployeesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#E2E2DF] p-5">
             <h3 className="text-[#1A1A1A] font-semibold text-base mb-2 flex items-center gap-2">
-              <Trash2 size={16} className="text-[#DC2626]" /> Delete {deleteTarget.name}?
+              <Trash2 size={16} className="text-[#DC2626]" /> {isSuperAdmin ? "Permanently delete" : "Delete"} {deleteTarget.name}?
             </h3>
-            <p className="text-[#5A5A5A] text-sm mb-5">
-              This marks <span className="font-semibold text-[#1A1A1A]">{deleteTarget.emp_code}</span> as
-              <span className="font-semibold"> inactive</span> and sets their exit date. Payroll and statutory
-              records are preserved (employees are never hard-deleted). This is audited.
-            </p>
+            {isSuperAdmin ? (
+              <p className="text-[#5A5A5A] text-sm mb-5">
+                This <span className="font-semibold text-[#DC2626]">permanently deletes</span>{" "}
+                <span className="font-semibold text-[#1A1A1A]">{deleteTarget.emp_code}</span> and ALL their
+                records — payroll, salary, attendance, leave, loans and login. <span className="font-semibold">This cannot be undone.</span>{" "}
+                Locked (finalized) payroll is protected: if any exists, deletion is blocked. Audited.
+              </p>
+            ) : (
+              <p className="text-[#5A5A5A] text-sm mb-5">
+                This marks <span className="font-semibold text-[#1A1A1A]">{deleteTarget.emp_code}</span> as
+                <span className="font-semibold"> inactive</span> and sets their exit date. Records are preserved. Audited.
+              </p>
+            )}
             <div className="flex items-center justify-end gap-2">
               <button onClick={() => setDeleteTarget(null)} disabled={deleting}
                 className="px-4 py-2.5 text-sm bg-white border border-[#E2E2DF] text-[#5A5A5A] hover:bg-[#F4F4F2] rounded-xl transition font-medium disabled:opacity-60">Cancel</button>
               <button onClick={confirmDelete} disabled={deleting}
                 className="flex items-center gap-2 px-5 py-2.5 text-sm bg-[#DC2626] text-white hover:bg-[#B91C1C] rounded-xl transition font-semibold disabled:opacity-60">
-                {deleting ? <><Loader2 size={14} className="animate-spin" /> Deleting…</> : "Delete"}
+                {deleting ? <><Loader2 size={14} className="animate-spin" /> Deleting…</> : (isSuperAdmin ? "Delete permanently" : "Delete")}
               </button>
             </div>
           </div>

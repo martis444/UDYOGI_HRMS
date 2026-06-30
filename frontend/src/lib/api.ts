@@ -411,8 +411,10 @@ export async function apiUpdateEmployee(code: string, body: Record<string, unkno
   return data;
 }
 
-export async function apiDeleteEmployee(code: string) {
-  const { data } = await api.delete(`/api/employees/${code}`);
+// hard=true permanently deletes the employee + all their records (super_admin only);
+// otherwise a soft delete (marks inactive, preserves history).
+export async function apiDeleteEmployee(code: string, hard = false) {
+  const { data } = await api.delete(`/api/employees/${code}`, { params: hard ? { hard: true } : {} });
   return data;
 }
 

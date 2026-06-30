@@ -8,7 +8,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
@@ -16,7 +16,7 @@ from app.core.db import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.core.security import hash_password
 from app.models.employee import (
-    AuditLog, Department, Employee, Grade, Location, SalaryStructure, User,
+    AuditLog, Department, Employee, Grade, Location, PayrollMonth, SalaryStructure, User,
 )
 from app.schemas.employee import (
     EmployeeCreate,
@@ -697,10 +697,43 @@ async def update_employee(
     return EmployeeResponse(**_build_response(emp, db))
 
 
+# Tables holding the employee's OWN rows — deleted on a hard delete. Order matters:
+# loan_emi_schedule before loans (it FKs loans.id). Each is guarded by to_regclass so
+# a table absent on a given DB is skipped, not an error.
+_HARD_DELETE_CHILDREN = [
+    ("loan_emi_schedule", "emp_code"),
+    ("loans",             "emp_code"),
+    ("payroll_months",    "emp_code"),
+    ("salary_structures", "emp_code"),
+    ("attendance_daily",  "emp_code"),
+    ("attendance_raw",    "emp_code"),
+    ("biometric_mapping", "emp_code"),
+    ("leave_balances",    "emp_code"),
+    ("leave_accrual_log", "emp_code"),
+    ("leave_requests",    "emp_code"),
+    ("documents",         "emp_code"),
+    ("helpdesk_tickets",  "emp_code"),
+    ("assets",            "assigned_to"),
+    ("users",             "emp_code"),
+]
+# OTHER rows that merely POINT AT this employee — null the reference, never delete them.
+_HARD_DELETE_NULL_REFS = [
+    ("leave_requests",  "approved_by"),
+    ("documents",       "uploaded_by"),
+    ("helpdesk_tickets", "assigned_to"),
+    ("employees",       "reporting_mgr_code"),
+]
+
+
+def _table_exists(db: Session, table: str) -> bool:
+    return db.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{table}"}).scalar() is not None
+
+
 @router.delete("/{emp_code}", status_code=status.HTTP_200_OK)
-def deactivate_employee(
+def delete_employee(
     emp_code: str,
     req: Request,
+    hard: bool = Query(False, description="Permanently delete the employee and ALL their records (super_admin only)."),
     current_user: User = Depends(require_role("super_admin", "entity_admin")),
     db: Session = Depends(get_db),
 ):
@@ -712,12 +745,51 @@ def deactivate_employee(
         raise HTTPException(status_code=404, detail="Employee not found")
     _assert_entity_access(current_user, emp.entity_id)
 
+    ip = req.client.host if req.client else None
+
+    # ── HARD delete: permanently remove the employee + all dependent records ──────
+    if hard:
+        if current_user.role != "super_admin":
+            raise HTTPException(status_code=403, detail="Only a super admin can permanently delete an employee.")
+        # Safeguard: never wipe FINALIZED payroll. Locked months must be unlocked first.
+        locked = (
+            db.query(func.count(PayrollMonth.id))
+            .filter(PayrollMonth.emp_code == emp_code, PayrollMonth.status == "locked")
+            .scalar()
+        )
+        if locked:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"{emp_code} has {locked} locked payroll month(s). Unlock them first, or use "
+                        "Deactivate — hard delete is blocked to protect finalized payroll."),
+            )
+
+        snapshot = {"name": emp.name, "entity_id": emp.entity_id, "status": emp.status}
+        removed: dict[str, int] = {}
+        # Null back-references first (other rows pointing at this employee).
+        for table, col in _HARD_DELETE_NULL_REFS:
+            if _table_exists(db, table):
+                res = db.execute(text(f"UPDATE {table} SET {col} = NULL WHERE {col} = :c"), {"c": emp_code})
+                if res.rowcount:
+                    removed[f"{table}.{col}→null"] = res.rowcount
+        # Delete the employee's own child rows.
+        for table, col in _HARD_DELETE_CHILDREN:
+            if _table_exists(db, table):
+                res = db.execute(text(f"DELETE FROM {table} WHERE {col} = :c"), {"c": emp_code})
+                if res.rowcount:
+                    removed[table] = res.rowcount
+        db.execute(text("DELETE FROM employees WHERE emp_code = :c"), {"c": emp_code})
+
+        _audit(db, user_code=current_user.emp_code, action="HARD_DELETE", record_id=emp_code,
+               old_values=snapshot, new_values={"removed": removed}, ip=ip)
+        db.commit()
+        return {"message": f"Employee {emp_code} permanently deleted", "removed": removed}
+
+    # ── SOFT delete (default): mark inactive, preserve all history ────────────────
     if emp.status == "inactive":
         raise HTTPException(status_code=400, detail="Employee is already inactive")
 
-    ip = req.client.host if req.client else None
     old_status = emp.status
-
     emp.status = "inactive"
     emp.exit_date = date.today()
     emp.updated_at = datetime.now(timezone.utc)
