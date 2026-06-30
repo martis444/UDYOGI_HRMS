@@ -188,14 +188,18 @@ def _parse_inc_date(raw) -> Optional[date]:
 # absolute value per component; blank = carry the current value forward.
 # "Other Allowance" is the DISPLAY label for other_earning (the fixed component) after
 # the Session-22 terminology swap.
+# Keys include both the DISPLAY headers and the CANONICAL names that parse_upload_file
+# rewrites them to via the shared import column-map (e.g. LTA→leave_travel, Other
+# Allowance→other_earning) — so the columns are found whether parsed raw or pre-renamed.
 _INC_COMPONENT_COLS = {
     "basic": "basic",
     "hra": "hra", "house rent allow": "hra", "house rent allowance": "hra",
     "medical": "medical", "medical allow": "medical", "medical allowance": "medical",
-    "special": "spl", "special allow": "spl", "special allowance": "spl", "spl": "spl",
+    "spl": "spl", "special": "spl", "special allow": "spl", "special allowance": "spl",
     "cca": "cca", "city comp allow": "cca", "city compensatory allowance": "cca",
-    "lta": "leave_travel", "leave travel": "leave_travel", "leave travel allow": "leave_travel",
-    "other allowance": "other_earning", "other allow": "other_earning",
+    "leave_travel": "leave_travel", "lta": "leave_travel",
+    "leave travel": "leave_travel", "leave travel allow": "leave_travel",
+    "other_earning": "other_earning", "other allowance": "other_earning", "other allow": "other_earning",
 }
 
 
@@ -217,7 +221,7 @@ def prepare_increment_row(raw: dict, db: Session, actor_entity: Optional[str]) -
     ident = str(g("sap code") or g("sap_code") or g("emp code") or g("emp_code") or "").strip()
     out: dict = {"emp_code": ident}
     if not ident:
-        out["error"] = "SAP Code / Emp Code is required"
+        out["skip"] = True   # blank/legend row in the template — not a data row
         return out
 
     # Resolve identity → employee: try emp_code, then SAP code.
