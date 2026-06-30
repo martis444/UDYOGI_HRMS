@@ -46,22 +46,23 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
     # from the existing row in process_payroll_month).
     other_earning   = float(src.other_earning or 0)
 
-    # Statutory gross now INCLUDES medical (Session 22: medical is a paid earning in
-    # gross, so ESIC/PT pick it up). PF base stays `basic` only (12% of basic).
-    # other_earning / other_allowance stay OUTSIDE the PF/ESIC/PT base.
+    # Statutory gross INCLUDES medical (PF base stays `basic` only — 12% of basic).
+    # PT resolves on this gross. ESI 'wages' are broader (see esic_wages below).
     gross    = basic + hra + spl + cca + leave_travel + medical
     pf_base  = basic
 
     pf_emp = min(round(pf_base * 0.12), 1800) if emp.pf_applicable else 0
     pf_ern = min(round(pf_base * 0.13), 2340) if emp.pf_applicable else 0
 
-    # ESIC always rounds UP (ceiling) per statutory requirement —
-    # fractional paise are always rounded in favour of the fund, not the employee.
-    # Gated by esic_applicable: HR can opt an employee out (e.g. exempted/excluded)
-    # and the system then deducts nothing — single source of truth for ESIC on/off.
-    if emp.esic_applicable is not False and gross <= 21000:
-        esic_emp = math.ceil(gross * 0.0075)
-        esic_ern = math.ceil(gross * 0.0325)
+    # ESI wages = ALL earnings (gross + Other Earning + Other Allowance), per the ESI
+    # Act. BOTH the ₹21,000 eligibility ceiling AND the 0.75%/3.25% contribution are on
+    # these total wages. Always rounds UP (in favour of the fund). esic_applicable lets
+    # HR opt an employee out entirely. (process_payroll_month re-evaluates this on the
+    # final per-month other_allowance + the paid amount.)
+    esic_wages = gross + other_earning + other_allowance
+    if emp.esic_applicable is not False and esic_wages <= 21000:
+        esic_emp = math.ceil(esic_wages * 0.0075)
+        esic_ern = math.ceil(esic_wages * 0.0325)
     else:
         esic_emp = 0
         esic_ern = 0
@@ -113,6 +114,7 @@ def compute_payroll(emp_code: str, year: int, month: int, db: Session) -> dict:
         "gender":      emp.gender,
         "pt_state":    pt_state,
         "pt_applicable": emp.pt_applicable,
+        "esic_applicable": emp.esic_applicable,
     }
 
 
@@ -270,16 +272,20 @@ def process_payroll_month(
     if data["pf_emp"] or data["pf_ern"]:               # PF applicable
         data["pf_emp"] = min(round(basic_paid * 0.12), 1800)
         data["pf_ern"] = min(round(basic_paid * 0.13), 2340)
-    # ESIC wages = ALL paid earnings (the ESI Act's 'wages' is broad), i.e. the
-    # statutory gross PLUS Other Earning + Other Allowance — NOT just the statutory
-    # components. Both are full-value (the per-month additions aren't prorated).
-    # Mirror PF: reprorate whenever the base run charged ESIC (which already encodes
-    # esic_applicable AND the committed-gross ≤ ₹21,000 ceiling). No `gross_paid > 0`
-    # guard — a fully-absent month → base 0 → ceil(0) = 0 (matching PF).
-    esic_base = gross_paid + float(data["other_earning"] or 0) + float(data["other_allowance"] or 0)
-    if data["esic_emp"] or data["esic_ern"]:
+    # ESIC wages = ALL earnings (statutory gross + Other Earning + Other Allowance),
+    # per the ESI Act. Eligibility ceiling (≤ ₹21,000) is on the COMMITTED total wages;
+    # the 0.75%/3.25% contribution is on the PAID total wages. Re-evaluated here (not the
+    # compute-run base) so the per-month Other Allowance counts toward both. esic_applicable
+    # lets HR opt out. No gross_paid>0 guard — a fully-absent month → base 0 → ESIC 0.
+    other_extra   = float(data["other_earning"] or 0) + float(data["other_allowance"] or 0)
+    committed_wages = float(data["gross"]) + other_extra
+    esic_base       = gross_paid + other_extra
+    if (data.get("esic_applicable") is not False) and committed_wages <= 21000:
         data["esic_emp"] = math.ceil(esic_base * 0.0075)
         data["esic_ern"] = math.ceil(esic_base * 0.0325)
+    else:
+        data["esic_emp"] = 0
+        data["esic_ern"] = 0
     # PT is re-resolved on the PAID gross slab (not the committed gross): an absent
     # employee whose earnings fall into a lower band pays that band's PT, or ₹0 below
     # the threshold. Full-attendance months are unchanged (gross_paid == committed gross).
