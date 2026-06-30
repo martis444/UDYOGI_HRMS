@@ -979,30 +979,76 @@ class BulkIncrementCommitBody(BaseModel):
     rows: list[dict]
 
 
+@router.get("/bulk-increment/template")
+def bulk_increment_template(
+    entity_id: str = Query(...),
+    current_user: User = Depends(require_role("super_admin", "entity_admin")),
+    db: Session = Depends(get_db),
+):
+    """Pre-filled bulk-increment template — same salary columns as the salary sheet, one
+    row per active employee with their CURRENT salary, plus blank Effective From / Reason.
+    Edit the new values for whoever's getting a raise, fill their Effective From (1st of a
+    month) + Reason, and re-upload. A blank Effective From means that row is NOT incremented."""
+    _assert_entity_access(current_user, entity_id)
+    employees = (
+        db.query(Employee)
+        .filter(Employee.entity_id == entity_id, Employee.status == "active")
+        .order_by(Employee.name)
+        .all()
+    )
+
+    def _n(v) -> str:
+        d = float(v or 0)
+        return str(int(d)) if d == int(d) else f"{d:.2f}"
+
+    out = io.StringIO()
+    out.write("SAP Code,Employee Name,Basic,HRA,Medical,Special,CCA,LTA,"
+              "Other Allowance,Effective From,Reason\n")
+    for e in employees:
+        ident = (e.sap_code or e.emp_code or "").replace(",", " ")
+        name = (e.name or "").replace(",", " ")
+        out.write(",".join([
+            ident, name, _n(e.basic), _n(e.hra), _n(e.medical), _n(e.spl),
+            _n(e.cca), _n(e.leave_travel), _n(e.other_earning), "", "",
+        ]) + "\n")
+    out.write("\n,SAP Code identifies the employee — do NOT edit it. Change the new salary "
+              "values for employees getting an increment;\n")
+    out.write(",fill their Effective From (must be the 1st of a month, e.g. 01-05-2026) and "
+              "Reason (increment or correction). Leave Effective From blank to skip a row.\n")
+
+    return StreamingResponse(
+        io.BytesIO(out.getvalue().encode("utf-8-sig")),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=bulk_increment_{entity_id}.csv"},
+    )
+
+
 @router.post("/bulk-increment/validate")
 async def bulk_increment_validate(
     file: UploadFile = File(...),
     current_user: User = Depends(require_role("super_admin", "entity_admin")),
     db: Session = Depends(get_db),
 ):
-    """Dry-run: parse + validate a bulk-increment CSV/XLSX. No DB writes.
+    """Dry-run: parse + validate a bulk-increment CSV/XLSX (salary-sheet-style). No DB writes.
 
-    Columns: emp_code, effective_from (1st of a month), reason, mode, value.
-    mode = pct | flat | abs_basic | abs_hra | abs_spl | abs_cca | abs_lta | abs_other.
-    """
+    Columns: SAP Code (or Emp Code), Employee Name, Basic, HRA, Medical, Special, CCA,
+    LTA, Other Allowance (the NEW absolute values), Effective From (1st of a month) + Reason.
+    A blank Effective From skips that row (not incremented)."""
     rows = await parse_upload_file(file)
     actor_entity = _actor_entity_id(current_user)
     prepared = [prepare_increment_row(r, db, actor_entity) for r in rows]
-    valid = [p for p in prepared if "error" not in p]
+    valid = [p for p in prepared if "error" not in p and not p.get("skip")]
     errors = [
         {"emp_code": p.get("emp_code") or "—", "error": p["error"]}
         for p in prepared if "error" in p
     ]
+    skipped = sum(1 for p in prepared if p.get("skip"))
     return {
         "valid": valid,
         "errors": errors,
         "total_valid": len(valid),
         "total_error": len(errors),
+        "skipped": skipped,
     }
 
 

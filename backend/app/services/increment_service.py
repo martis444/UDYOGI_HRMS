@@ -184,12 +184,29 @@ def _parse_inc_date(raw) -> Optional[date]:
     return None
 
 
-def prepare_increment_row(raw: dict, db: Session, actor_entity: Optional[str]) -> dict:
-    """Validate + resolve ONE bulk-increment row (no DB writes).
+# Salary-sheet-style template column → structure component. The user types the NEW
+# absolute value per component; blank = carry the current value forward.
+# "Other Allowance" is the DISPLAY label for other_earning (the fixed component) after
+# the Session-22 terminology swap.
+_INC_COMPONENT_COLS = {
+    "basic": "basic",
+    "hra": "hra", "house rent allow": "hra", "house rent allowance": "hra",
+    "medical": "medical", "medical allow": "medical", "medical allowance": "medical",
+    "special": "spl", "special allow": "spl", "special allowance": "spl", "spl": "spl",
+    "cca": "cca", "city comp allow": "cca", "city compensatory allowance": "cca",
+    "lta": "leave_travel", "leave travel": "leave_travel", "leave travel allow": "leave_travel",
+    "other allowance": "other_earning", "other allow": "other_earning",
+}
 
-    Returns a dict carrying either an 'error' string, or the resolved increment
-    (emp_code, name, effective_from ISO, reason, new_values, current/new gross)
-    ready for apply_increment.
+
+def prepare_increment_row(raw: dict, db: Session, actor_entity: Optional[str]) -> dict:
+    """Validate ONE bulk-increment row (salary-sheet-style, no DB writes).
+
+    Columns: SAP Code (or Emp Code), Employee Name, the salary components (Basic, HRA,
+    Medical, Special, CCA, LTA, Other Allowance) holding the NEW absolute values, plus
+    Effective From + Reason. A blank Effective From → the row is SKIPPED (out['skip']).
+    Returns either {'error': ...}, {'skip': True}, or a resolved increment ready for
+    apply_increment (emp_code, name, effective_from ISO, reason, new_values, gross).
     """
     def g(key: str):
         for k, v in raw.items():
@@ -197,76 +214,78 @@ def prepare_increment_row(raw: dict, db: Session, actor_entity: Optional[str]) -
                 return v.strip() if isinstance(v, str) else v
         return None
 
-    emp_code = str(g("emp_code") or "").strip()
-    mode = str(g("mode") or "").strip().lower()
-    out: dict = {
-        "emp_code": emp_code,
-        "mode": mode,
-        "value": g("value"),
-        "reason": (str(g("reason") or "increment").strip().lower() or "increment"),
-    }
+    ident = str(g("sap code") or g("sap_code") or g("emp code") or g("emp_code") or "").strip()
+    out: dict = {"emp_code": ident}
+    if not ident:
+        out["error"] = "SAP Code / Emp Code is required"
+        return out
 
-    if not emp_code:
-        out["error"] = "emp_code is required"
-        return out
-    emp = db.query(Employee).filter(Employee.emp_code == emp_code).first()
+    # Resolve identity → employee: try emp_code, then SAP code.
+    emp = db.query(Employee).filter(Employee.emp_code == ident).first()
     if emp is None:
-        out["error"] = f"employee {emp_code} not found"
+        emp = db.query(Employee).filter(Employee.sap_code == ident).first()
+    if emp is None:
+        out["error"] = f"employee '{ident}' not found"
         return out
+    out["emp_code"] = emp.emp_code
     out["name"] = emp.name
     out["entity_id"] = emp.entity_id
     if actor_entity is not None and emp.entity_id != actor_entity:
         out["error"] = "employee is outside your entity"
         return out
 
-    ef = _parse_inc_date(g("effective_from"))
+    # Blank Effective From → not an increment; skip silently.
+    ef_raw = g("effective from") or g("effective_from")
+    if not str(ef_raw or "").strip():
+        out["skip"] = True
+        return out
+    ef = _parse_inc_date(ef_raw)
     if ef is None:
-        out["error"] = f"bad effective_from '{g('effective_from')}' (use YYYY-MM-DD)"
+        out["error"] = f"bad Effective From '{ef_raw}' (use DD-MM-YYYY)"
         return out
     if ef.day != 1:
-        out["error"] = "effective_from must be the 1st of a month"
+        out["error"] = "Effective From must be the 1st of a month"
         return out
     out["effective_from"] = ef.isoformat()
 
-    if out["reason"] not in ("increment", "correction"):
-        out["error"] = "reason must be 'increment' or 'correction'"
+    reason = (str(g("reason") or "increment").strip().lower() or "increment")
+    if reason not in ("increment", "correction"):
+        out["error"] = "Reason must be 'increment' or 'correction'"
         return out
+    out["reason"] = reason
 
-    try:
-        val = Decimal(str(g("value")).replace(",", "").replace("₹", "").strip())
-    except (InvalidOperation, AttributeError, TypeError):
-        out["error"] = f"bad value '{g('value')}'"
-        return out
-    if mode not in _VALID_MODES:
-        out["error"] = f"unknown mode '{mode}' — use pct / flat / " + " / ".join(_ABS_FIELD)
-        return out
-    if mode in ("pct", "flat") and val <= 0:
-        out["error"] = "value must be greater than 0"
-        return out
-    if val < 0:
-        out["error"] = "value cannot be negative"
-        return out
-
-    active = get_active_structure(db, emp_code)
+    active = get_active_structure(db, emp.emp_code)
     if active is None:
         out["error"] = "no active salary structure to increment"
         return out
     if ef <= active.effective_from:
-        out["error"] = (
-            f"effective_from must be after the current structure start "
-            f"({active.effective_from})"
-        )
+        out["error"] = f"Effective From must be after the current structure start ({active.effective_from})"
         return out
 
-    try:
-        new_values = resolve_increment(active, mode, val)
-    except ValueError as e:
-        out["error"] = str(e)
+    # Per-component NEW absolute values; blank cell = carry the current value forward.
+    new_values: dict = {}
+    for header_key, comp in _INC_COMPONENT_COLS.items():
+        if comp in new_values:
+            continue
+        v = g(header_key)
+        if v is None or str(v).strip() == "":
+            continue
+        try:
+            new_values[comp] = Decimal(str(v).replace(",", "").replace("₹", "").strip())
+        except (InvalidOperation, AttributeError, TypeError):
+            out["error"] = f"bad {comp} value '{v}'"
+            return out
+        if new_values[comp] < 0:
+            out["error"] = f"{comp} cannot be negative"
+            return out
+
+    if not new_values:
+        out["error"] = "no salary values provided to change"
         return out
 
     merged = {c: _to_dec(getattr(active, c)) for c in _COMPONENTS}
-    merged.update({k: _to_dec(v) for k, v in new_values.items()})
-    out["new_values"] = {k: float(_to_dec(v)) for k, v in new_values.items()}
+    merged.update(new_values)
+    out["new_values"] = {k: float(v) for k, v in new_values.items()}
     out["current_gross"] = float(sum(_to_dec(getattr(active, c)) for c in _STATUTORY))
     out["new_gross"] = float(sum(merged[c] for c in _STATUTORY))
     return out

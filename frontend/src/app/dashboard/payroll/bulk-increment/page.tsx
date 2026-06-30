@@ -1,12 +1,16 @@
 "use client";
 
-// Bulk salary increment — upload a CSV, preview the computed new salaries, apply
-// them all in one transaction. Each row picks a mode: pct / flat / abs_<field>.
+// Bulk salary increment — download a pre-filled template (same columns as the salary
+// sheet, with each employee's CURRENT salary), edit the new values + Effective From /
+// Reason for whoever's getting a raise, re-upload, preview, and apply in one transaction.
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
 import GlassCard from "@/components/ui/GlassCard";
+import { useAuth } from "@/lib/auth";
+import { ENTITIES } from "@/store/entity";
 import {
+  apiDownloadBulkIncrementTemplate,
   apiBulkIncrementValidate,
   apiBulkIncrementCommit,
   type BulkIncrementRow,
@@ -16,23 +20,7 @@ import {
   CheckCircle2, FileSpreadsheet,
 } from "lucide-react";
 
-const TEMPLATE = [
-  "emp_code,effective_from,reason,mode,value",
-  "UP000001,2026-08-01,increment,pct,10",
-  "UP000002,2026-08-01,increment,flat,2000",
-  "UP000003,2026-08-01,increment,abs_basic,15000",
-].join("\n");
-
-const MODES: [string, string][] = [
-  ["pct", "Raise every component by value %  (e.g. 10 = +10%)"],
-  ["flat", "Add value rupees to Basic"],
-  ["abs_basic", "Set Basic to value (absolute)"],
-  ["abs_hra", "Set HRA to value"],
-  ["abs_spl", "Set SPL to value"],
-  ["abs_cca", "Set CCA to value"],
-  ["abs_lta", "Set LTA (leave_travel) to value"],
-  ["abs_other", "Set Other Allowance to value"],
-];
+const REAL_ENTITIES = ENTITIES.filter((e) => e.id !== "ALL");
 
 const money = (n: number) =>
   `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
@@ -42,20 +30,16 @@ function errMsg(e: unknown, fb: string) {
   return typeof m === "string" ? m : fb;
 }
 
-function downloadTemplate() {
-  const blob = new Blob([TEMPLATE + "\n"], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "bulk_increment_template.csv";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function BulkIncrementPage() {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
+
+  const [entity, setEntity] = useState<string>(isSuperAdmin ? "UPPL" : (user?.entity_id ?? ""));
+  const [downloading, setDownloading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [valid, setValid] = useState<BulkIncrementRow[]>([]);
   const [errors, setErrors] = useState<{ emp_code: string; error: string }[]>([]);
+  const [skipped, setSkipped] = useState(0);
   const [validating, setValidating] = useState(false);
   const [applying, setApplying] = useState(false);
   const [validated, setValidated] = useState(false);
@@ -63,8 +47,20 @@ export default function BulkIncrementPage() {
   const [done, setDone] = useState<number | null>(null);
 
   const reset = () => {
-    setValid([]); setErrors([]); setValidated(false); setError(""); setDone(null);
+    setValid([]); setErrors([]); setSkipped(0); setValidated(false); setError(""); setDone(null);
   };
+
+  const onDownload = useCallback(async () => {
+    if (!entity) return;
+    setDownloading(true); setError("");
+    try {
+      await apiDownloadBulkIncrementTemplate(entity);
+    } catch (e) {
+      setError(errMsg(e, "Could not download the template."));
+    } finally {
+      setDownloading(false);
+    }
+  }, [entity]);
 
   const onValidate = useCallback(async () => {
     if (!file) return;
@@ -73,6 +69,7 @@ export default function BulkIncrementPage() {
       const res = await apiBulkIncrementValidate(file);
       setValid(res.valid ?? []);
       setErrors(res.errors ?? []);
+      setSkipped(res.skipped ?? 0);
       setValidated(true);
     } catch (e) {
       setError(errMsg(e, "Could not read the file."));
@@ -87,7 +84,7 @@ export default function BulkIncrementPage() {
     try {
       const res = await apiBulkIncrementCommit(valid);
       setDone(res.applied);
-      setValid([]); setErrors([]); setValidated(false); setFile(null);
+      setValid([]); setErrors([]); setSkipped(0); setValidated(false); setFile(null);
     } catch (e) {
       setError(errMsg(e, "Failed to apply increments."));
     } finally {
@@ -110,7 +107,7 @@ export default function BulkIncrementPage() {
         <div>
           <h1 className="text-xl font-bold text-[#1A1A1A]">Bulk salary increment</h1>
           <p className="text-[#6B6B6B] text-sm">
-            Apply increments to many employees at once — % hike, flat add, or absolute values.
+            Download the salary template, change the values, re-upload — increments for many employees at once.
           </p>
         </div>
       </div>
@@ -126,27 +123,41 @@ export default function BulkIncrementPage() {
         </div>
       )}
 
-      {/* Step 1 — template + reference */}
+      {/* Step 1 — pre-filled template */}
       <GlassCard className="p-5">
-        <h2 className="text-[#1A1A1A] font-semibold text-base mb-2">1 · Prepare the file</h2>
+        <h2 className="text-[#1A1A1A] font-semibold text-base mb-2">1 · Download the salary template</h2>
         <p className="text-[#5A5A5A] text-sm mb-3">
-          Columns: <code className="text-[#1A1A1A]">emp_code, effective_from, reason, mode, value</code>.
-          Effective date must be the <b>1st of a month</b> (e.g. 2026-08-01). Reason = increment or correction.
+          The template lists every employee with their <b>current salary</b> — same columns as the salary
+          sheet: <code className="text-[#1A1A1A]">Basic, HRA, Medical, Special, CCA, LTA, Other Allowance</code>,
+          plus <code className="text-[#1A1A1A]">Effective From</code> and <code className="text-[#1A1A1A]">Reason</code>.
         </p>
-        <div className="grid sm:grid-cols-2 gap-2 mb-4">
-          {MODES.map(([m, desc]) => (
-            <div key={m} className="flex items-baseline gap-2 text-xs text-[#5A5A5A]">
-              <code className="text-[#E5202E] font-semibold shrink-0">{m}</code>
-              <span>{desc}</span>
+        <ul className="text-xs text-[#5A5A5A] list-disc pl-5 mb-4 space-y-1">
+          <li>Change the salary values for employees getting an increment.</li>
+          <li>Fill their <b>Effective From</b> (must be the 1st of a month, e.g. 01-05-2026) and <b>Reason</b> (increment / correction).</li>
+          <li>Leave <b>Effective From blank</b> for everyone you&apos;re not changing — those rows are skipped.</li>
+          <li>Don&apos;t edit the <b>SAP Code</b> — it identifies the employee.</li>
+        </ul>
+        <div className="flex flex-wrap items-end gap-3">
+          {isSuperAdmin && (
+            <div>
+              <label className="block text-xs font-semibold text-[#5A5A5A] mb-1.5">Entity</label>
+              <select
+                value={entity}
+                onChange={(e) => setEntity(e.target.value)}
+                className="bg-white border border-[#E2E2DF] rounded-xl px-3 py-2 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E5202E]"
+              >
+                {REAL_ENTITIES.map((e) => <option key={e.id} value={e.id}>{e.id}</option>)}
+              </select>
             </div>
-          ))}
+          )}
+          <button
+            onClick={onDownload}
+            disabled={downloading || !entity}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-sm bg-white border border-[#E2E2DF] text-[#1A1A1A] rounded-xl hover:bg-[#F4F4F2] transition font-medium disabled:opacity-50"
+          >
+            {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Download template
+          </button>
         </div>
-        <button
-          onClick={downloadTemplate}
-          className="inline-flex items-center gap-2 px-3.5 py-2 text-sm bg-white border border-[#E2E2DF] text-[#1A1A1A] rounded-xl hover:bg-[#F4F4F2] transition font-medium"
-        >
-          <Download size={14} /> Download template CSV
-        </button>
       </GlassCard>
 
       {/* Step 2 — upload + validate */}
@@ -180,7 +191,8 @@ export default function BulkIncrementPage() {
           <div className="mt-4 space-y-3">
             <p className="text-sm text-[#5A5A5A]">
               <b className="text-[#16A34A]">{valid.length}</b> ready ·{" "}
-              <b className="text-[#DC2626]">{errors.length}</b> with errors
+              <b className="text-[#DC2626]">{errors.length}</b> with errors ·{" "}
+              <b className="text-[#6B6B6B]">{skipped}</b> skipped (no Effective From)
             </p>
 
             {valid.length > 0 && (
@@ -191,7 +203,7 @@ export default function BulkIncrementPage() {
                       <th className="text-left px-3 py-2">Emp code</th>
                       <th className="text-left px-3 py-2">Name</th>
                       <th className="text-left px-3 py-2">Effective</th>
-                      <th className="text-left px-3 py-2">Mode</th>
+                      <th className="text-left px-3 py-2">Reason</th>
                       <th className="text-right px-3 py-2">Current gross</th>
                       <th className="text-right px-3 py-2">New gross</th>
                     </tr>
@@ -202,7 +214,7 @@ export default function BulkIncrementPage() {
                         <td className="px-3 py-2 font-mono text-[#1A1A1A]">{r.emp_code}</td>
                         <td className="px-3 py-2 text-[#1A1A1A]">{r.name ?? "—"}</td>
                         <td className="px-3 py-2 text-[#5A5A5A]">{r.effective_from}</td>
-                        <td className="px-3 py-2"><code className="text-[#E5202E]">{r.mode}</code> {String(r.value)}</td>
+                        <td className="px-3 py-2 text-[#5A5A5A] capitalize">{r.reason}</td>
                         <td className="px-3 py-2 text-right text-[#5A5A5A]">{money(r.current_gross)}</td>
                         <td className="px-3 py-2 text-right font-semibold text-[#1A1A1A]">{money(r.new_gross)}</td>
                       </tr>

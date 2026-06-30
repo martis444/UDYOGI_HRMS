@@ -440,8 +440,6 @@ export interface BulkIncrementRow {
   emp_code: string;
   name?: string;
   entity_id?: string;
-  mode: string;
-  value: string | number;
   effective_from: string;
   reason: string;
   new_values: Record<string, number>;
@@ -449,11 +447,20 @@ export interface BulkIncrementRow {
   new_gross: number;
 }
 
+// Download the pre-filled, salary-sheet-style template (current salaries for the entity).
+export async function apiDownloadBulkIncrementTemplate(entity_id: string) {
+  const response = await api.get("/api/employees/bulk-increment/template", {
+    params: { entity_id }, responseType: "blob",
+  });
+  _saveBlob(response.data as Blob, `bulk_increment_${entity_id}.csv`);
+}
+
 export async function apiBulkIncrementValidate(file: File): Promise<{
   valid: BulkIncrementRow[];
   errors: { emp_code: string; error: string }[];
   total_valid: number;
   total_error: number;
+  skipped: number;
 }> {
   const formData = new FormData();
   formData.append("file", file);
