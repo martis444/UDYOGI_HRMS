@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Optional
@@ -45,6 +46,26 @@ def _pgp_decrypt(db: Session, ciphertext: Optional[bytes]) -> Optional[str]:
     ).scalar()
 
 
+def _plain_number(value: Optional[str]) -> Optional[str]:
+    """De-mangle Excel scientific notation. Long numeric IDs (UAN, bank a/c) get turned
+    into strings like '1.0109E+11' when a spreadsheet is exported to CSV; render them as
+    plain digits so they're readable. Non-scientific values pass through unchanged.
+    (Note: the CSV export already lost precision, so this recovers the magnitude, not any
+    digits the spreadsheet dropped — a clean re-import of that column as Text is the real
+    fix for the underlying data.)"""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if re.fullmatch(r"[+-]?\d+(?:\.\d+)?[eE][+-]?\d+", s):
+        try:
+            f = float(s)
+            if f == int(f):
+                return str(int(f))
+        except (ValueError, OverflowError):
+            pass
+    return s
+
+
 def _mask_account(account: Optional[str]) -> Optional[str]:
     if not account:
         return None
@@ -88,7 +109,7 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
     salary_effective_from = eff.isoformat() if eff else None
     salary_effective_from_display = eff.strftime("%d-%b-%Y") if eff else None
 
-    bank_acc_raw    = _pgp_decrypt(db, emp.bank_acc_enc) if emp else None
+    bank_acc_raw    = _plain_number(_pgp_decrypt(db, emp.bank_acc_enc)) if emp else None
     bank_acc_masked = _mask_account(bank_acc_raw)
 
     # /30 proration factor (15.1) — pay_days = PER_DAY_DIVISOR - LOP_days.
@@ -206,10 +227,11 @@ def _build_response(pm: PayrollMonth, db: Session) -> dict[str, Any]:
         "entity_id":       emp.entity_id if emp else None,
         "entity_name":     ent.name if ent else "",
         "entity_address":  ent.address if ent else None,
-        "location_city":   loc.city if loc else "",
+        # GSTN-unit locations (14.1) carry their identifier in `name`; `city` is blank.
+        "location_city":   (loc.name or loc.city) if loc else "",
         "bank_acc_masked": bank_acc_masked,
         "pf_number":       emp.pf_number if emp else None,
-        "uan_no":          emp.uan if emp else None,
+        "uan_no":          _plain_number(emp.uan) if emp else None,
         "esi_no":          emp.esic_no if emp else None,
         "leave_balances":  leave_balances,
         "leave":           leave,   # {cl,sl,pl} each {tb,ulb,alb}
