@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 import re
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -1034,9 +1035,18 @@ async def bulk_increment_validate(
     Columns: SAP Code (or Emp Code), Employee Name, Basic, HRA, Medical, Special, CCA,
     LTA, Other Allowance (the NEW absolute values), Effective From (1st of a month) + Reason.
     A blank Effective From skips that row (not incremented)."""
-    rows = await parse_upload_file(file)
+    rows = await parse_upload_file(file)  # raises a clean 400 on unreadable files
     actor_entity = _actor_entity_id(current_user)
-    prepared = [prepare_increment_row(r, db, actor_entity) for r in rows]
+    try:
+        prepared = [prepare_increment_row(r, db, actor_entity) for r in rows]
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 — never leak a raw 500; log + surface the reason
+        logging.getLogger(__name__).exception("bulk-increment validate failed")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not validate the increment file: {type(exc).__name__}: {exc}",
+        ) from exc
     valid = [p for p in prepared if "error" not in p and not p.get("skip")]
     errors = [
         {"emp_code": p.get("emp_code") or "—", "error": p["error"]}

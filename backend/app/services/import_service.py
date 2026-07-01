@@ -531,7 +531,20 @@ async def parse_upload_file(file: UploadFile) -> list[dict]:
     if filename.endswith((".xlsx", ".xls")):
         df = pd.read_excel(io.BytesIO(content), keep_default_na=False)
     elif filename.endswith(".csv"):
-        df = pd.read_csv(io.BytesIO(content), dtype=str, keep_default_na=False)
+        # Excel on Windows saves CSVs as ANSI/cp1252 or UTF-8-with-BOM. Decode
+        # robustly (utf-8-sig strips a BOM) with a latin-1 fallback so an accented
+        # name or a stray non-UTF-8 byte can't crash the parse with a 500.
+        try:
+            try:
+                text = content.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                text = content.decode("latin-1")
+            df = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
+        except Exception as exc:  # noqa: BLE001 — surface a clean 400, not a 500
+            raise HTTPException(
+                status_code=400,
+                detail="Could not read the CSV file. Save it as CSV (UTF-8) or .xlsx and try again.",
+            ) from exc
     else:
         raise HTTPException(status_code=400, detail="Only .csv and .xlsx files are supported")
 
