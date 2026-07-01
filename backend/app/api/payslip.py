@@ -13,7 +13,8 @@ from app.core.config import settings
 from app.core.db import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.models.employee import (
-    AuditLog, Department, Employee, Entity, LeaveBalance, Location, PayrollMonth, User,
+    AttendanceDaily, AuditLog, Department, Employee, Entity, LeaveBalance,
+    Location, PayrollMonth, User,
 )
 from app.services.payroll_engine import compute_payroll, process_payroll_month, round_half_up
 from app.services.leave_engine import resolve_leave_balance
@@ -71,6 +72,39 @@ def _mask_account(account: Optional[str]) -> Optional[str]:
         return None
     visible = account[-4:] if len(account) >= 4 else account
     return "X" * (len(account) - len(visible)) + visible
+
+
+# Per-day-count columns on payroll_months. These are populated only by real
+# attendance — biometric/leave per-day rows, or an uploaded monthly CSV. A phantom
+# full-pay row (created just by viewing an unprocessed month) leaves them all NULL.
+_DAY_COUNT_COLS = ("days_p", "days_a", "days_wo", "days_cl", "days_pl", "days_sl", "days_h", "days_lwp")
+
+
+def _has_attendance_basis(
+    emp_code: str, year: int, month: int, db: Session, existing: Optional[PayrollMonth]
+) -> bool:
+    """True if real attendance exists for this pay month: biometric/leave per-day rows
+    in the 26th-cutoff window, or an existing payroll row carrying uploaded CSV
+    day-counts. A month with neither would only ever produce a misleading full-pay
+    payslip, so callers block it with a pending state instead of computing one."""
+    cutoff = settings.CYCLE_CUTOFF_DAY
+    win_start = date(year - 1, 12, cutoff) if month == 1 else date(year, month - 1, cutoff)
+    win_end = date(year, month, cutoff - 1)
+    has_daily = (
+        db.query(AttendanceDaily.id)
+        .filter(
+            AttendanceDaily.emp_code == emp_code,
+            AttendanceDaily.att_date >= win_start,
+            AttendanceDaily.att_date <= win_end,
+        )
+        .first()
+        is not None
+    )
+    if has_daily:
+        return True
+    return existing is not None and any(
+        getattr(existing, c) is not None for c in _DAY_COUNT_COLS
+    )
 
 
 def _assert_access(current_user: User, emp_code: str, db: Session) -> None:
@@ -267,12 +301,20 @@ def get_payslip_data(
         .first()
     )
 
-    # Snapshots are frozen only AFTER locking (CLAUDE.md rules 5 & 6).
-    # Any unlocked row is recomputed from current salary/attendance so an
-    # edited salary is reflected immediately. Locked rows stay untouched.
-    if pm is None or pm.status != "locked":
-        pm = process_payroll_month(emp_code, year, month, db, generated_by=current_user.emp_code)
+    # Locked snapshots are frozen and always shown (CLAUDE.md rules 5 & 6).
+    if pm is not None and pm.status == "locked":
+        return _build_response(pm, db)
 
+    # Otherwise the payslip is recomputed from current salary/attendance. But a month
+    # with no attendance basis at all would compute a misleading full-pay payslip, so
+    # block it with a pending state instead of manufacturing one.
+    if not _has_attendance_basis(emp_code, year, month, db, pm):
+        raise HTTPException(
+            status_code=409,
+            detail="Attendance for this month hasn't been uploaded yet, so the payslip isn't available. Upload attendance (CSV or biometric) for this period first.",
+        )
+
+    pm = process_payroll_month(emp_code, year, month, db, generated_by=current_user.emp_code)
     return _build_response(pm, db)
 
 
@@ -296,9 +338,15 @@ def get_payslip_pdf(
         .first()
     )
 
-    # Recompute unlocked rows so an edited salary shows in the PDF; locked
-    # snapshots stay frozen (CLAUDE.md rules 5 & 6).
-    if pm is None or pm.status != "locked":
+    # Locked snapshots stay frozen (CLAUDE.md rules 5 & 6). Unlocked rows recompute so
+    # an edited salary shows in the PDF — but a month with no attendance basis is
+    # blocked (no full-pay PDF conjured), mirroring the /data endpoint.
+    if not (pm is not None and pm.status == "locked"):
+        if not _has_attendance_basis(emp_code, year, month, db, pm):
+            raise HTTPException(
+                status_code=409,
+                detail="Attendance for this month hasn't been uploaded yet, so the payslip isn't available. Upload attendance (CSV or biometric) for this period first.",
+            )
         pm = process_payroll_month(emp_code, year, month, db, generated_by=current_user.emp_code)
 
     context = _build_response(pm, db)

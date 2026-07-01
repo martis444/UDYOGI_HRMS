@@ -718,9 +718,9 @@ export default function PayslipPage() {
               <div className="w-10 h-10 rounded-full bg-[#DC2626]/10 flex items-center justify-center">
                 <FileText size={18} className="text-[#DC2626]" />
               </div>
-              <p className="text-[#1A1A1A] font-semibold text-sm">No payslip found</p>
+              <p className="text-[#1A1A1A] font-semibold text-sm">Payslip unavailable</p>
               <p className="text-[#5A5A5A] text-xs max-w-xs">
-                {MONTH_NAMES[selMonth - 1]} {selYear} payslip is not yet processed.
+                {error ?? `${MONTH_NAMES[selMonth - 1]} ${selYear} payslip is not yet processed.`}
               </p>
             </div>
           </GlassCard>
