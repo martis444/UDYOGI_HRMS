@@ -438,6 +438,7 @@ export async function apiBulkImportCommit(rows: unknown[], filename: string) {
 
 export interface BulkIncrementRow {
   emp_code: string;
+  sap_code?: string;
   name?: string;
   entity_id?: string;
   effective_from: string;
@@ -457,7 +458,7 @@ export async function apiDownloadBulkIncrementTemplate(entity_id: string) {
 
 export async function apiBulkIncrementValidate(file: File): Promise<{
   valid: BulkIncrementRow[];
-  errors: { emp_code: string; error: string }[];
+  errors: { emp_code: string; sap_code?: string; error: string }[];
   total_valid: number;
   total_error: number;
   skipped: number;

@@ -38,7 +38,7 @@ export default function BulkIncrementPage() {
   const [downloading, setDownloading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [valid, setValid] = useState<BulkIncrementRow[]>([]);
-  const [errors, setErrors] = useState<{ emp_code: string; error: string }[]>([]);
+  const [errors, setErrors] = useState<{ emp_code: string; sap_code?: string; error: string }[]>([]);
   const [skipped, setSkipped] = useState(0);
   const [validating, setValidating] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -200,7 +200,7 @@ export default function BulkIncrementPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-[#F4F4F2] text-[#5A5A5A] text-xs uppercase tracking-wide">
                     <tr>
-                      <th className="text-left px-3 py-2">Emp code</th>
+                      <th className="text-left px-3 py-2">SAP code</th>
                       <th className="text-left px-3 py-2">Name</th>
                       <th className="text-left px-3 py-2">Effective</th>
                       <th className="text-left px-3 py-2">Reason</th>
@@ -211,7 +211,7 @@ export default function BulkIncrementPage() {
                   <tbody>
                     {valid.map((r, i) => (
                       <tr key={`${r.emp_code}-${i}`} className="border-t border-[#E2E2DF]">
-                        <td className="px-3 py-2 font-mono text-[#1A1A1A]">{r.emp_code}</td>
+                        <td className="px-3 py-2 font-mono text-[#1A1A1A]">{r.sap_code ?? r.emp_code}</td>
                         <td className="px-3 py-2 text-[#1A1A1A]">{r.name ?? "—"}</td>
                         <td className="px-3 py-2 text-[#5A5A5A]">{r.effective_from}</td>
                         <td className="px-3 py-2 text-[#5A5A5A] capitalize">{r.reason}</td>
@@ -228,7 +228,7 @@ export default function BulkIncrementPage() {
               <div className="rounded-xl border border-[#DC2626]/20 bg-[#DC2626]/5 p-3 space-y-1">
                 {errors.map((e, i) => (
                   <p key={i} className="text-xs text-[#DC2626]">
-                    <span className="font-mono font-semibold">{e.emp_code}</span> — {e.error}
+                    <span className="font-mono font-semibold">{e.sap_code ?? e.emp_code}</span> — {e.error}
                   </p>
                 ))}
               </div>

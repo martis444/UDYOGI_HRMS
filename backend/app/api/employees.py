@@ -1049,7 +1049,11 @@ async def bulk_increment_validate(
         ) from exc
     valid = [p for p in prepared if "error" not in p and not p.get("skip")]
     errors = [
-        {"emp_code": p.get("emp_code") or "—", "error": p["error"]}
+        {
+            "emp_code": p.get("emp_code") or "—",
+            "sap_code": p.get("sap_code") or p.get("emp_code") or "—",
+            "error": p["error"],
+        }
         for p in prepared if "error" in p
     ]
     skipped = sum(1 for p in prepared if p.get("skip"))

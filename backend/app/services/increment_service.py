@@ -219,7 +219,10 @@ def prepare_increment_row(raw: dict, db: Session, actor_entity: Optional[str]) -
         return None
 
     ident = str(g("sap code") or g("sap_code") or g("emp code") or g("emp_code") or "").strip()
-    out: dict = {"emp_code": ident}
+    # sap_code is what HR sees in the validation report (they work by SAP code, not
+    # the internal emp_code). Default to the identifier they typed; overwrite with the
+    # resolved employee's canonical SAP code below.
+    out: dict = {"emp_code": ident, "sap_code": ident}
     if not ident:
         out["skip"] = True   # blank/legend row in the template — not a data row
         return out
@@ -232,6 +235,7 @@ def prepare_increment_row(raw: dict, db: Session, actor_entity: Optional[str]) -
         out["error"] = f"employee '{ident}' not found"
         return out
     out["emp_code"] = emp.emp_code
+    out["sap_code"] = emp.sap_code or ident   # canonical SAP code (fallback: typed value / emp_code)
     out["name"] = emp.name
     out["entity_id"] = emp.entity_id
     if actor_entity is not None and emp.entity_id != actor_entity:
