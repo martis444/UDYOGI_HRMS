@@ -53,10 +53,31 @@ def apply_increment(
             "Increment must be effective from the 1st of the month"
         )
 
-    # 2. Current active structure.
+    emp = db.query(Employee).filter(Employee.emp_code == emp_code).first()
+    if emp is None:
+        raise ValueError(f"Employee {emp_code} not found")
+
+    # 2. Current active structure. Employees onboarded via bulk import (or single
+    #    create) never got a seed structure — only increments create them — so
+    #    bootstrap a baseline from the live employee salary columns. Payroll already
+    #    falls back to those same columns, so this adds the missing history row
+    #    without changing any figure, giving the increment something to supersede.
     active = get_active_structure(db, emp_code)
     if active is None:
-        raise ValueError(f"No active salary structure found for {emp_code}")
+        baseline_from = (
+            emp.doj if (emp.doj and emp.doj < effective_from)
+            else effective_from - timedelta(days=1)
+        )
+        active = SalaryStructure(
+            emp_code       = emp_code,
+            effective_from = baseline_from,
+            effective_to   = None,
+            reason         = "correction",
+            created_by     = actor_emp_code,
+            **{c: _to_dec(getattr(emp, c)) for c in _COMPONENTS},
+        )
+        db.add(active)
+        db.flush()
 
     # 3. Cannot backdate before the current structure's start.
     if effective_from <= active.effective_from:
@@ -68,10 +89,6 @@ def apply_increment(
     # 4. Validate reason.
     if reason not in ("increment", "correction"):
         raise ValueError("reason must be 'increment' or 'correction'")
-
-    emp = db.query(Employee).filter(Employee.emp_code == emp_code).first()
-    if emp is None:
-        raise ValueError(f"Employee {emp_code} not found")
 
     # Snapshot old components for the audit trail.
     old_components = {c: float(_to_dec(getattr(active, c))) for c in _COMPONENTS}
@@ -262,11 +279,12 @@ def prepare_increment_row(raw: dict, db: Session, actor_entity: Optional[str]) -
         return out
     out["reason"] = reason
 
+    # No structure yet (bulk-imported employees never got one) → the increment will
+    # bootstrap a baseline from the employee's live salary columns at commit, so use
+    # those columns as the "current" figures here instead of rejecting the row.
     active = get_active_structure(db, emp.emp_code)
-    if active is None:
-        out["error"] = "no active salary structure to increment"
-        return out
-    if ef <= active.effective_from:
+    base = active if active is not None else emp
+    if active is not None and ef <= active.effective_from:
         out["error"] = f"Effective From must be after the current structure start ({active.effective_from})"
         return out
 
@@ -291,9 +309,9 @@ def prepare_increment_row(raw: dict, db: Session, actor_entity: Optional[str]) -
         out["error"] = "no salary values provided to change"
         return out
 
-    merged = {c: _to_dec(getattr(active, c)) for c in _COMPONENTS}
+    merged = {c: _to_dec(getattr(base, c)) for c in _COMPONENTS}
     merged.update(new_values)
     out["new_values"] = {k: float(v) for k, v in new_values.items()}
-    out["current_gross"] = float(sum(_to_dec(getattr(active, c)) for c in _STATUTORY))
+    out["current_gross"] = float(sum(_to_dec(getattr(base, c)) for c in _STATUTORY))
     out["new_gross"] = float(sum(merged[c] for c in _STATUTORY))
     return out
